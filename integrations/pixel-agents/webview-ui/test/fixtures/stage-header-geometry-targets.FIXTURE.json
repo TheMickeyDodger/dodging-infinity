@@ -158,6 +158,7 @@
      "target": 28,
      "tol": 2,
      "note": "ink; the lock draws OUTLINE glyphs, the product's are its own filled/stroke assets: only size and pitch are restored",
+     "absent": "moved into More by 1B (the Find a file and Settings items of the More menu)",
      "scales": true
     },
     {
@@ -166,6 +167,7 @@
      "target": 28,
      "tol": 2,
      "note": "",
+     "absent": "moved into More by 1B (the Find a file and Settings items of the More menu)",
      "scales": true
     },
     {
@@ -182,31 +184,37 @@
      "target": 31,
      "tol": 2,
      "note": "",
+     "absent": "moved into More by 1B (the Find a file and Settings items of the More menu)",
      "scales": true
     },
     {
      "id": "tool.more.h",
      "lock": 27,
-     "target": 27,
+     "target": 32.0,
      "tol": 2,
      "note": "ink height of the three dots",
-     "scales": true
+     "scales": true,
+     "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The old target (27) was the ink height of the three-dot icon; 1B replaced it with the text More trigger, a .di-page-button whose stylesheet height is 32px (diScanPages.css) and which the 0.72 convention does not scale (only the icon button and the svg rules use --stage-hdr-k): derived 32, measured 32.0 at 1672 and 32.0 at 1280. No reference image draws the new tool set; an owner-approvable capture is owed to the final Brave run, row 10.",
+     "at1280": 32.0
     },
     {
      "id": "tool.pitch",
      "lock": 70,
-     "target": 70,
+     "target": 78.0,
      "tol": 2,
      "note": "centre to centre, mean of the three",
-     "scales": true
+     "scales": true,
+     "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The old target (70) was the mean centre-to-centre pitch of FOUR tools; two remain (Copy and the More trigger), and the distance between them mixes scaled parts (the icon button, the row gap, --stage-hdr-k) with a fixed 75.1px text trigger, so no single 0.72 factor derives it: measured 78.0 at 1672 and 64.5 at 1280 (the 1280 value is recorded in at1280). No reference image draws the new tool set; an owner-approvable capture is owed to the final Brave run, row 10.",
+     "at1280": 64.5
     },
     {
      "id": "tool.rightInset",
      "lock": 40,
-     "target": 40,
+     "target": 21.0,
      "tol": 1,
      "note": "from the last glyph's ink to the right edge of the viewport",
-     "scales": true
+     "scales": true,
+     "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The old target (40) was the distance from the last of four glyphs to the right edge; the last tool is now the More trigger. Derived by the 0.72 convention from the 1672 measurement (21.0 x 0.72 = 15.1) and measured 15.0 at 1280. No reference image draws the new tool set; an owner-approvable capture is owed to the final Brave run, row 10."
     },
     {
      "id": "rule.y",
@@ -440,9 +448,9 @@
     {
      "id": "subtitle.top",
      "lock": 86,
-     "target": 86,
+     "target": 82,
      "tol": 1,
-     "note": "ink top of the Mission name"
+     "note": "ink top of the Mission name. CHANGED IN B2b (Q1, the ramp wins): the Comments title above it is on the ramp's title step, 18 px (was 20), so the name sits 4 px higher; the reference's 86 is kept as lock"
     }
    ]
   }
@@ -493,7 +501,8 @@
      720
     ],
     "id": "home.tools.n",
-    "value": 2
+    "value": 1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 2 was Settings (the sliders icon) and the Needs-you filter (the filter icon); 1B moved BOTH into the Options menu (items di-scan-settings and di-scan-filter), so the Home header now draws ONE tool, the Options trigger. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "specimen",
@@ -502,7 +511,8 @@
      720
     ],
     "id": "home.tool0.w",
-    "value": 32
+    "value": 75.1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 32 was the 32px Settings icon button; the first (only) tool is now the text Options trigger, a .di-page-button (height 32px in the stylesheet, which is why tool0.h still equals its baseline), whose width is its label's. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "specimen",
@@ -520,7 +530,8 @@
      720
     ],
     "id": "home.tools.gap",
-    "value": 6
+    "value": 6,
+    "absent": "a single tool has no gap between tools: Settings and the Needs-you filter moved into the Options menu (1B), so the gap that was measured between them no longer exists. The old value is kept in the fixture as history."
    },
    {
     "surface": "specimen",
@@ -574,7 +585,8 @@
      941
     ],
     "id": "home.tools.n",
-    "value": 2
+    "value": 1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 2 was Settings (the sliders icon) and the Needs-you filter (the filter icon); 1B moved BOTH into the Options menu (items di-scan-settings and di-scan-filter), so the Home header now draws ONE tool, the Options trigger. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "specimen",
@@ -583,7 +595,8 @@
      941
     ],
     "id": "home.tool0.w",
-    "value": 32
+    "value": 75.1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 32 was the 32px Settings icon button; the first (only) tool is now the text Options trigger, a .di-page-button (height 32px in the stylesheet, which is why tool0.h still equals its baseline), whose width is its label's. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "specimen",
@@ -601,7 +614,8 @@
      941
     ],
     "id": "home.tools.gap",
-    "value": 6
+    "value": 6,
+    "absent": "a single tool has no gap between tools: Settings and the Needs-you filter moved into the Options menu (1B), so the gap that was measured between them no longer exists. The old value is kept in the fixture as history."
    },
    {
     "surface": "specimen",
@@ -655,7 +669,8 @@
      720
     ],
     "id": "home.tools.n",
-    "value": 2
+    "value": 1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 2 was Settings (the sliders icon) and the Needs-you filter (the filter icon); 1B moved BOTH into the Options menu (items di-scan-settings and di-scan-filter), so the Home header now draws ONE tool, the Options trigger. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "real",
@@ -664,7 +679,8 @@
      720
     ],
     "id": "home.tool0.w",
-    "value": 32
+    "value": 75.1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 32 was the 32px Settings icon button; the first (only) tool is now the text Options trigger, a .di-page-button (height 32px in the stylesheet, which is why tool0.h still equals its baseline), whose width is its label's. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "real",
@@ -682,7 +698,8 @@
      720
     ],
     "id": "home.tools.gap",
-    "value": 6
+    "value": 6,
+    "absent": "a single tool has no gap between tools: Settings and the Needs-you filter moved into the Options menu (1B), so the gap that was measured between them no longer exists. The old value is kept in the fixture as history."
    },
    {
     "surface": "real",
@@ -736,7 +753,8 @@
      941
     ],
     "id": "home.tools.n",
-    "value": 2
+    "value": 1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 2 was Settings (the sliders icon) and the Needs-you filter (the filter icon); 1B moved BOTH into the Options menu (items di-scan-settings and di-scan-filter), so the Home header now draws ONE tool, the Options trigger. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "real",
@@ -745,7 +763,8 @@
      941
     ],
     "id": "home.tool0.w",
-    "value": 32
+    "value": 75.1,
+    "provisional": "PROVISIONAL, MEASURED NOT APPROVED. The baseline of 32 was the 32px Settings icon button; the first (only) tool is now the text Options trigger, a .di-page-button (height 32px in the stylesheet, which is why tool0.h still equals its baseline), whose width is its label's. An owner-approvable capture is owed to the final Brave run, row 10."
    },
    {
     "surface": "real",
@@ -763,7 +782,8 @@
      941
     ],
     "id": "home.tools.gap",
-    "value": 6
+    "value": 6,
+    "absent": "a single tool has no gap between tools: Settings and the Needs-you filter moved into the Options menu (1B), so the gap that was measured between them no longer exists. The old value is kept in the fixture as history."
    },
    {
     "surface": "real",

@@ -660,6 +660,32 @@ const measureDiff = () =>
     const tree = q('.di-scan-tree') as HTMLElement | null;
     const barKids = kids(bar);
     const editorKids = kids(editorBar);
+    // the bar's controls by what they ARE, at any depth, and their rows (B3: the bar may wrap and its controls may be grouped)
+    const leafSel = 'button, select, input, [data-testid="di-scan-editor-path"], [data-testid="di-scan-diff-copy-result"], .di-scan-fixture-tag';
+    const leaves =
+      editorBar === null
+        ? []
+        : [...editorBar.querySelectorAll<HTMLElement>(leafSel)]
+            .filter((el) => !el.classList.contains('di-scan-visually-hidden') && el.getClientRects().length > 0 && getComputedStyle(el).visibility === 'visible')
+            .map((el) => ({ el, r: el.getBoundingClientRect() }))
+            .filter(({ r }) => r.width >= 2 && r.height >= 2);
+    const leafLabel = (el: HTMLElement) => (el.textContent ?? '').trim().slice(0, 70) || el.getAttribute('aria-label') || el.getAttribute('data-testid') || el.tagName.toLowerCase();
+    const overlaps2d = leaves.flatMap(({ el: a, r: ra }, i) =>
+      leaves.slice(i + 1).flatMap(({ el: b, r: rb }) =>
+        Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left) > 0.5 && Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top) > 0.5 ? [`${leafLabel(a)} | ${leafLabel(b)}`] : [],
+      ),
+    );
+    const tops = leaves.map(({ r }) => r.top).sort((x, y) => x - y);
+    const editorRows = tops.reduce((n, t, i) => (i === 0 || t - tops[i - 1]! > 4 ? n + 1 : n), 0);
+    const barCss = editorBar === null ? null : getComputedStyle(editorBar);
+    const editorNeed =
+      editorBar === null || barCss === null
+        ? { oneRow: 0, inner: 0 }
+        : {
+            // one row would need every control at its natural width (the path at its floor) plus the gaps and the bar's padding
+            oneRow: Math.round((leaves.reduce((sum, { el, r }) => sum + (el.getAttribute('data-testid') === 'di-scan-editor-path' ? parseFloat(getComputedStyle(el).minWidth) || 0 : r.width), 0) + Math.max(0, leaves.length - 1) * (parseFloat(barCss.columnGap) || 0) + parseFloat(barCss.paddingLeft) + parseFloat(barCss.paddingRight)) * 10) / 10,
+            inner: editorBar.clientWidth,
+          };
     return {
       viewport: { w: innerWidth, h: innerHeight },
       tree: box(tree),
@@ -669,7 +695,9 @@ const measureDiff = () =>
       statusKids: barKids,
       statusOverlaps: overlaps(barKids),
       editorKids,
-      editorOverlaps: overlaps(editorKids),
+      editorOverlaps: overlaps2d,
+      editorRows,
+      editorNeed,
       editorBarContent: editorBar === null ? null : { scrollWidth: editorBar.scrollWidth, clientWidth: editorBar.clientWidth },
       note: box(q('.di-scan-tree-note')),
       treeScroll: tree === null ? null : { scrollHeight: tree.scrollHeight, clientHeight: tree.clientHeight },
@@ -822,9 +850,14 @@ test(
           const b = specimen[key];
           if (a === null || b === null) {
             problems.push(`${where}: ${key} missing (real ${JSON.stringify(a)}, specimen ${JSON.stringify(b)})`);
-          } else if (Math.abs(a.w - b.w) > 0.5 || Math.abs(a.h - b.h) > 0.5) {
+          } else if (Math.abs(a.w - b.w) > 0.5 || (key !== 'editorBar' && Math.abs(a.h - b.h) > 0.5)) {
             problems.push(`${where}: ${key} is ${a.w}x${a.h}, the specimen's is ${b.w}x${b.h}`);
           }
+        }
+        // the editor bar's HEIGHT: equal to the specimen's when it has the same number of rows; more rows are allowed only when one row cannot hold the controls (their floor widths, the gaps and the padding exceed the bar)
+        if (m.editorBar !== null && specimen.editorBar !== null && Math.abs(m.editorBar.h - specimen.editorBar.h) > 0.5) {
+          if (m.editorRows === specimen.editorRows) problems.push(`${where}: editorBar is ${m.editorBar.h} high with ${m.editorRows} row(s), the specimen's is ${specimen.editorBar.h} with the same number of rows`);
+          else if (!(m.editorRows > specimen.editorRows && m.editorNeed.oneRow > m.editorNeed.inner + 0.5)) problems.push(`${where}: the editor bar has ${m.editorRows} row(s) (the specimen ${specimen.editorRows}) though one row would hold it (it needs ${m.editorNeed.oneRow}px of ${m.editorNeed.inner}px)`);
         }
         if (m.statusOverlaps.length > 0) problems.push(`${where}: status bar items overlap: ${m.statusOverlaps.join('; ')}`);
         if (m.editorOverlaps.length > 0) problems.push(`${where}: editor bar items overlap: ${m.editorOverlaps.join('; ')}`);

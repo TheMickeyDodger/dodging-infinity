@@ -362,8 +362,9 @@ function App() {
       begin: review.open,
       end: review.close,
       choose: review.select,
+      refresh: review.refresh,
     }),
-    [openReview, review.session, review.open, review.close, review.select],
+    [openReview, review.session, review.open, review.close, review.select, review.refresh],
   );
   // item 4: the Mission request workspace. It talks only to the closed `diMissionRequest`
   // messages the server relays to the request panel's loopback adapter (the token stays in the
@@ -388,6 +389,7 @@ function App() {
   const setMissionComposer = mission.setComposer;
   const sendMissionTurn = mission.sendTurn;
   const newMissionConversation = mission.newConversation;
+  const closeMissionConversation = mission.closeConversation;
   const watchMissionConversation = mission.watchConversation;
   const dismissMissionNotice = mission.dismiss;
   const closeMission = mission.close;
@@ -415,6 +417,7 @@ function App() {
       setComposer: setMissionComposer,
       sendTurn: sendMissionTurn,
       newConversation: newMissionConversation,
+      closeConversation: closeMissionConversation,
       readConversation,
       watchConversation: watchMissionConversation,
       // B8: New Mission is ONE screen with ONE composer. It knows when the workspace (and so its own Ask composer) is showing, and entering New Mission closes it;
@@ -436,6 +439,7 @@ function App() {
       setMissionComposer,
       sendMissionTurn,
       newMissionConversation,
+      closeMissionConversation,
       watchMissionConversation,
       dismissMissionNotice,
     ],
@@ -798,8 +802,11 @@ function App() {
   ]);
   // Arrow keys pan a large world (presentation only). Never in the layout editor, never while
   // a form control has focus, never with a modifier (the editor's own shortcuts stay theirs).
+  // K1: never while the Map is drawn. The Map no longer swallows keys typed in a panel beside or over it (WorldMap.tsx), so this listener must not
+  // act on the world behind the Map: isolation is kept as BEHAVIOUR (measured: before this gate, an arrow key on a panel button RAN this listener with
+  // the Map open; observed by the follow reset it writes before clamping, not by camera coordinates).
   useEffect(() => {
-    if (!isDiMode || !largeWorld || editor.isEditMode) return;
+    if (!isDiMode || !largeWorld || editor.isEditMode || mapShown) return;
     const onKey = (e: KeyboardEvent) => {
       const dir: Record<string, [number, number]> = {
         ArrowLeft: [1, 0],
@@ -835,7 +842,7 @@ function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isDiMode, largeWorld, editor.isEditMode, editor.panRef, currentZoom, handleUserPan]);
+  }, [isDiMode, largeWorld, editor.isEditMode, mapShown, editor.panRef, currentZoom, handleUserPan]);
   // A layout the user edits is theirs: the DI world never reshapes it again.
   useEffect(() => {
     if (isDiMode && editor.isDirty) markDiWorldCustom();
@@ -910,6 +917,61 @@ function App() {
   const worldChromeCollapsible = diOfficeState !== null && officeFace === 'scan';
   const [worldChromeOpen, setWorldChromeOpen] = useState(false);
   const worldChromeShown = !worldChromeCollapsible || worldChromeOpen;
+  // B3 routes: three focus callbacks. The world controls sit LAST in the page and behind the disclosure; a person at Home reaches the Map (opening the disclosure first), the tray, and comes back, in a fixed number of keys.
+  const worldFocusPending = useRef(false);
+  const [worldFocusTick, setWorldFocusTick] = useState(0);
+  const focusWorldControls = useCallback(() => {
+    worldFocusPending.current = true;
+    setWorldChromeOpen(true);
+    setWorldFocusTick((tick) => tick + 1);
+  }, []);
+  useEffect(() => {
+    if (!worldFocusPending.current) return;
+    worldFocusPending.current = false;
+    document.querySelector<HTMLElement>('[data-testid="world-view-map"]')?.focus();
+  }, [worldFocusTick]);
+  const focusMinimized = useCallback(() => {
+    minimizedTray?.querySelector<HTMLElement>('button')?.focus();
+  }, [minimizedTray]);
+  /**
+   * The first of the Mission list's entry points that is DRAWN, focused, with the landing VERIFIED. Mounted is not enough: a collapsed panel keeps its search mounted and
+   * hidden (a `??` chain stopped there, focus() on a hidden element is a no-op, and nothing recovered). A candidate that does not take focus falls through to the next.
+   */
+  const focusListEntry = useCallback(() => {
+    const drawn = (id: string): HTMLElement | null => {
+      const el = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+      return el !== null && el.getClientRects().length > 0 && getComputedStyle(el).visibility === 'visible' ? el : null;
+    };
+    const search = drawn('di-scan-search');
+    if (search !== null) {
+      search.focus();
+      if (document.activeElement === search) return;
+    }
+    const home = drawn('di-rail-home');
+    if (home !== null) {
+      // a screen COVERS the list (the single-pane sizes: the covered search is mounted but not visible): the route to the list is Home itself, ACTIVATED. Landing NEXT to it would make the
+      // person ask again, and the covering screen would stay. Focus lands in the list's search once Home is drawn.
+      home.click();
+      requestAnimationFrame(() => (drawn('di-scan-search') ?? home).focus());
+      return;
+    }
+    drawn('di-office-panel-collapsed')?.focus();
+  }, []);
+  const listFocusPending = useRef(false);
+  const focusMissionList = useCallback(() => {
+    // a COLLAPSED panel is expanded first (the office panel's own destinations do the same: whenExpanded), and focus lands once its list is drawn
+    if (diPanelCollapsed) {
+      listFocusPending.current = true;
+      setDiPanelCollapsed(false);
+      return;
+    }
+    focusListEntry();
+  }, [diPanelCollapsed, focusListEntry]);
+  useEffect(() => {
+    if (diPanelCollapsed || !listFocusPending.current) return;
+    listFocusPending.current = false;
+    focusListEntry();
+  }, [diPanelCollapsed, focusListEntry]);
   const toggleWorldChrome = useCallback(() => {
     setWorldChromeOpen((open) => {
       // the City panel opens from a control behind the disclosure, so it closes with it
@@ -1138,6 +1200,8 @@ function App() {
           // the world also starts after the navigation rail at the window's left edge (DI_RAIL_WIDTH_PX).
           width: diOfficeState ? `calc(100% - ${diRightInsetPx + diRailPx}px)` : '100%',
           marginLeft: diRailPx,
+          // B3: the width the minimized-surface strip takes while it holds chips, for an open screen to yield (diScanPanel.css, DiScanPanel.tsx)
+          ['--scan-tray-w' as string]: `${dock.stripPx}px`,
         }}
       >
         <OfficeCanvas
@@ -1336,6 +1400,9 @@ function App() {
                 presentation={officeFace}
                 worldOpen={worldOpen}
                 onOpenSettings={() => setIsSettingsOpen(true)}
+                onJumpToWorld={isDiMode && largeWorld && worldChromeCollapsible && worldControlsAvailable && !editor.isEditMode && !isCityOpen ? focusWorldControls : undefined}
+                minimizedCount={minimizedCount}
+                onJumpToMinimized={focusMinimized}
               />
             )}
             {diOfficeState && (
@@ -1488,6 +1555,7 @@ function App() {
                     districts={districts.map((d) => d.label)}
                     onSelectDistrict={goToDistrict}
                     districtStatus={districtStatus}
+                    onBackToMissions={diOfficeState ? focusMissionList : undefined}
                     offices={(getOfficeState().officeDetection?.offices ?? [])
                       .filter((o) => o.kind === 'district')
                       .map((o) => ({
@@ -1649,7 +1717,8 @@ function App() {
             data-testid="di-minimized-tray"
             style={{
               width: DI_MINIMIZED_STRIP_WIDTH_PX,
-              right: dock.trayRightPx,
+              // B3: where the strip sits beside the dock (a one-pane screen moves it to the window's edge: diScanPanel.css)
+              ['--scan-tray-dock' as string]: `${dock.trayRightPx}px`,
             }}
           />
         )}

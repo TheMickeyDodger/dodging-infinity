@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TEST-ONLY SURFACE: the anchored popover inside constrained frames (B2c round 15)</title>
+    <!-- TEST ONLY. The app's own AnchoredPopover inside a clipping frame of a chosen width, its trigger at a chosen place (`?case=neither|narrow|roomy`),
+         to prove that the RENDERED box stays inside its frame and its items stay reachable. It proves the component, not where the product puts it. -->
+    <style>
+      body {
+        margin: 0;
+      }
+      .frame {
+        position: absolute;
+        top: 100px;
+        left: 200px;
+        height: 520px;
+        overflow: auto;
+        box-sizing: border-box;
+      }
+      .row {
+        position: relative;
+        padding-top: 20px;
+      }
+      .row .di-popover-anchor,
+      .trigger {
+        width: 100%;
+      }
+      .trigger {
+        box-sizing: border-box;
+        height: 36px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./diPopoverFrame.tsx"></script>
+  </body>
+</html>

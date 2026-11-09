@@ -506,3 +506,81 @@ export async function runHeaderControls(browser: Browser): Promise<ControlResult
   }
   return results;
 }
+
+/**
+ * F-b (method rule 5): the stage bar's CHANNEL and the header's minimum ONE-ROW content, each MEASURED ON ITS OWN, never one inferred from the other.
+ *  - channel: the bar's content box (its width less its padding), with `barFillsStage` proving the bar fills the stage (its outer width equals the
+ *    stage's inner width), so the channel is capacity, not the bar's own content;
+ *  - minOneRow / maxOneRow: a measurement-only probe (no wrapping anywhere in the bar; the bar at min-content, then max-content), REMOVED after reading
+ *    and VERIFIED removed. min-content leaves the title at its own floor (minmax(1.5em, ...)), the minimum the wrap rule protects;
+ *  - scaleK: `--stage-hdr-k` read where it is CONSUMED (the bar). It THROWS if the variable is absent there: an instrument must fail, never report a
+ *    default (B2c: an earlier copy read it from the stage, which F-b's container query no longer sets, and reported 1 while the product drew 0.72).
+ */
+export interface OneRowNeed {
+  channel: number;
+  minOneRow: number;
+  maxOneRow: number;
+  scaleK: number;
+  barFillsStage: boolean;
+  stageWidth: number;
+  stageInner: number;
+}
+export async function oneRowNeed(page: Page): Promise<OneRowNeed> {
+  return page.evaluate(() => {
+    const bar = document.querySelector<HTMLElement>('[data-testid="di-scan-stage"] .di-scan-stage-bar');
+    const stage = document.querySelector<HTMLElement>('[data-testid="di-scan-stage"]');
+    if (bar === null || stage === null) throw new Error('oneRowNeed: no stage bar to measure');
+    const k = getComputedStyle(bar).getPropertyValue('--stage-hdr-k').trim();
+    if (k === '') throw new Error('oneRowNeed: --stage-hdr-k is not set where it is consumed (the stage bar); refusing to report a default');
+    const px = (v: string) => parseFloat(v) || 0;
+    const bs = getComputedStyle(bar);
+    const ss = getComputedStyle(stage);
+    const barBox = bar.getBoundingClientRect();
+    const stageBox = stage.getBoundingClientRect();
+    const channel = barBox.width - px(bs.paddingLeft) - px(bs.paddingRight);
+    const stageInner = stageBox.width - px(ss.paddingLeft) - px(ss.paddingRight) - px(ss.borderLeftWidth) - px(ss.borderRightWidth);
+    const barOuter = barBox.width + px(bs.marginLeft) + px(bs.marginRight);
+    const probe = document.createElement('style');
+    const scope = '[data-testid="di-scan-stage"] .di-scan-stage-bar';
+    const content = (w: string) => `${scope}, ${scope} * { flex-wrap: nowrap !important; } ${scope} { width: ${w} !important; max-width: none !important; }`;
+    const inner = () => bar.getBoundingClientRect().width - px(getComputedStyle(bar).paddingLeft) - px(getComputedStyle(bar).paddingRight);
+    probe.textContent = content('min-content');
+    document.head.appendChild(probe);
+    const minOneRow = inner();
+    probe.textContent = content('max-content');
+    const maxOneRow = inner();
+    probe.remove();
+    if (Math.abs(bar.getBoundingClientRect().width - barBox.width) > 0.5) throw new Error('oneRowNeed: the probe did not come off cleanly (the bar changed width)');
+    return {
+      channel: Math.round(channel),
+      minOneRow: Math.round(minOneRow),
+      maxOneRow: Math.round(maxOneRow),
+      scaleK: Number(k),
+      barFillsStage: Math.abs(barOuter - stageInner) <= 0.5,
+      stageWidth: Math.round(stageBox.width),
+      stageInner: Math.round(stageInner),
+    };
+  });
+}
+
+/**
+ * F-b's RE-EXPRESSED one-row pin (the Lead's ruling T3): ONE row wherever the channel holds the header's minimum one-row content; where it does not
+ * (genuinely long content in a narrow docked stage), the DESIGNED wrap: exactly two rows, the crumb row above, the tabs and tools TOGETHER below.
+ * The DRAWN rows (`measureHeader`'s boxes) and the NEED (`oneRowNeed`'s probe) are two separate measurements, so this can fail: the control in
+ * diScanHeaderRegion.test.ts draws two rows in a channel that holds the content and must go red.
+ */
+export function oneRowPin(m: HeaderMeasure, need: OneRowNeed, tag: string): string[] {
+  if (m.rows === 1) return [];
+  if (need.channel >= need.minOneRow)
+    return [`${tag}: its channel (${need.channel} px) holds its minimum one-row content (${need.minOneRow} px), yet it draws ${m.rows} rows: ONE row is required`];
+  const out: string[] = [];
+  if (m.rows !== 2) out.push(`${tag}: the designed wrap takes TWO rows; it draws ${m.rows}`);
+  const centre = (b: { y: number; h: number }) => b.y + b.h / 2;
+  const upper = m.boxes.filter((b) => b.name === 'back' || b.name === 'mark' || b.name.startsWith('crumb') || b.name.startsWith('sep'));
+  const lower = m.boxes.filter((b) => b.name.startsWith('tab-') || b.name.startsWith('tool-'));
+  if (upper.length > 0 && lower.length > 0) {
+    if (!(Math.min(...lower.map(centre)) > Math.max(...upper.map(centre)) + 8)) out.push(`${tag}: in the designed wrap the tabs and tools are not wholly below the crumb row`);
+    if (Math.max(...lower.map(centre)) - Math.min(...lower.map(centre)) > 8) out.push(`${tag}: in the designed wrap the tabs and tools are not on ONE row together`);
+  }
+  return out;
+}

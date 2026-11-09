@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TEST-ONLY SURFACE: an anchored popover inside a modal dialog (B2c, ruling (A))</title>
+    <!-- TEST ONLY. No product surface puts an anchored popover inside a modal dialog. This page exercises the MECHANISM by which such a popover returns
+         focus to its own modal when its trigger can no longer take it (diPopover.ts). It proves the mechanism, NOT that it is wired anywhere a person
+         can reach. The trigger is made unavailable by hiding it, the way a re-render could. -->
+    <style>
+      [data-trigger-gone='true'] [data-testid='h-pop'] {
+        visibility: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./diPopoverInModal.tsx"></script>
+  </body>
+</html>

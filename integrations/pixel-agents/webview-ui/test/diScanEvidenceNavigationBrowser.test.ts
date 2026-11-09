@@ -112,6 +112,13 @@ beforeEach(async (ctx) => {
 const p = () => page!;
 const sel = (id: string) => `[data-testid="${id}"]`;
 
+/** B2c: Comments, Evidence and review and Herdr are items of Mission details' "More actions" (an anchored, non-modal popover); open it, unless it is
+ *  open, to read or use one. A held item is aria-disabled (and stays focusable), never natively disabled. */
+async function openMore(): Promise<void> {
+  if ((await p().locator('[data-testid="di-scan-more-actions-popover"]').count()) === 0) await p().click('[data-testid="di-scan-more-actions"]');
+  await p().waitForSelector('[data-testid="di-scan-more-actions-popover"]');
+}
+
 test(
   'EVIDENCE AND REVIEW (browser): opens the existing library for THAT Mission on its own screen, listing exactly its listed artifacts; opening it reads nothing; choosing the artifact keyed test_log renders its content, under its key, never called a log',
   async () => {
@@ -128,8 +135,11 @@ test(
     socket!.send(JSON.stringify(office));
     const row = `${sel('di-scan-row')}[data-mission-ref="${listed.missionRef}"]`;
     await p().waitForSelector(row);
+    // CHANGED IN B2a (Q8 = (a)): one click docks a Mission; the select-then-open second step (the removed card's Open Mission) is gone
     await p().click(row);
-    await p().click(sel('di-scan-open-mission'));
+    // CHANGED IN B2c: "Evidence and review" is an item of Mission details' "More actions"
+    await p().waitForSelector(sel('di-scan-more-actions'));
+    await openMore();
     const open = p().locator(sel('di-scan-evidence'));
     await open.waitFor();
     assert.equal(((await open.textContent()) ?? '').trim(), 'Evidence and review');

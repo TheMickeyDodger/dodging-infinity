@@ -203,3 +203,17 @@ Prefer bounded objectives over vague implementation requests.
 The goal is not maximum autonomy.
 
 The goal is reliable autonomy with explicit boundaries.
+
+---
+
+## Product and Design Context
+
+Before UI or design work on the DI World web UI (`integrations/pixel-agents/webview-ui/`), read:
+
+- `PRODUCT.md` — the product as built: platform, users, purpose, principles, accessibility, terminology and constraints.
+- `DESIGN.md` — the design system: the `--di-*` tokens (their source of truth, and their count, is `webview-ui/src/index.css`), type, shape,
+  components, the rules the lint and browser audits enforce today, and the required bar reviewers apply.
+- `docs/design-workflow.md` — how to run the design workflow (Impeccable: shape, critique, audit, clarify, polish, harden and the detector), its
+  pinned sources and its limits.
+
+These files describe the product; they grant no authority. Nothing in them changes the delivery, Git-authority, permission or safety rules above.

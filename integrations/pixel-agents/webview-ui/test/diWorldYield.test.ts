@@ -190,10 +190,25 @@ const gateStates = () =>
     GATE,
   );
 const mapDrawn = () => p().locator(MAP).count();
+type HarnessCamera = { __diHarnessOffice?: { cameraFollowId: number | null; characters: Map<number, unknown> } };
+/** K1: set the camera to follow a character, so the world-pan listener's run is observable (it clears the follow BEFORE clamping, App.tsx). */
+const followSet = () =>
+  p().evaluate(() => {
+    const o = (window as unknown as HarnessCamera).__diHarnessOffice!;
+    const id = [...o.characters.keys()].find((k) => k >= 0) ?? null;
+    o.cameraFollowId = id;
+    return id;
+  });
+/** K1: did the world-pan LISTENER RUN (its follow reset)? Listener execution and state change, NOT camera motion: no coordinate is read. */
+const panListenerRan = () => p().evaluate(() => (window as unknown as HarnessCamera).__diHarnessOffice!.cameraFollowId === null);
+const unfollow = () => p().evaluate(() => void ((window as unknown as HarnessCamera).__diHarnessOffice!.cameraFollowId = null));
+const focusNow = () => p().evaluate(() => document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName ?? null);
 
 /**
- * Do the page's own keydown handlers still receive a key? While the Map is OPEN its window-level capture guard swallows every key, so this is
- * false; with the Map closed or not drawn it must be true. (Teeth: it is asserted false with the Map open.)
+ * Do the page's own keydown handlers still receive a key? INTRODUCED TEST UPDATE (K1's APPROVED behaviour change, ruling 3: isolation is
+ * observable behaviour, NOT every key stopped): while the open Map OWNS the keyboard (focus on the Map or its controls, or fallen to the body, nothing
+ * covering it), its guard stops the key, so this is false; with focus on a visible control OUTSIDE the Map, the Map yields and it is true; with the
+ * Map closed or not drawn it is true. (Teeth: it is asserted false where the Map owns the keys.)
  */
 async function handlersReceiveKeys(): Promise<boolean> {
   await p().evaluate(() => {
@@ -221,14 +236,30 @@ test(
       map: number;
       gates: string[];
       handlersReceiveKeys: boolean;
+      followed: number | null;
+      panListenerRan: boolean;
+      focus: string | null;
+      escapeLeftMapOpen: boolean | null;
     }> = [];
-    const observe = async (step: string) => {
-      steps.push({
-        step,
-        map: await mapDrawn(),
-        gates: await gateStates(),
-        handlersReceiveKeys: await handlersReceiveKeys(),
-      });
+    // INTRODUCED TEST UPDATE (K1): each step also observes, ON THE SAME ArrowDown the key probe presses, whether the world-pan listener ran; and at the
+    // two steps where focus is on a control outside the drawn Map (5 and 7), where focus is and whether Escape there leaves the Map open. Every field
+    // printed below is asserted.
+    const observe = async (step: string, outsideFocus = false) => {
+      const map = await mapDrawn();
+      const gates = await gateStates();
+      const followed = await followSet();
+      const keys = await handlersReceiveKeys();
+      const pan = await panListenerRan();
+      await unfollow();
+      let focus: string | null = null;
+      let escapeLeftMapOpen: boolean | null = null;
+      if (outsideFocus) {
+        focus = await focusNow();
+        await p().keyboard.press('Escape');
+        await p().waitForTimeout(400);
+        escapeLeftMapOpen = (await mapDrawn()) === 1;
+      }
+      steps.push({ step, map, gates, handlersReceiveKeys: keys, followed, panListenerRan: pan, focus, escapeLeftMapOpen });
     };
     await p().click('[data-testid="world-view-map"]');
     await p().waitForSelector(MAP);
@@ -240,21 +271,27 @@ test(
     await resize(400, 900);
     await observe('4 the window narrows to 400 again');
     await minimizeOffice();
-    await observe('5 the office is minimized at 400 (the world is 400 wide)');
+    await observe('5 the office is minimized at 400 (the world is 400 wide)', true);
     await restoreOffice();
     await observe('6 the office is restored at 400 (the world yields again)');
     await minimizeOffice();
-    await observe('7 the office is minimized once more');
+    await observe('7 the office is minimized once more', true);
     console.log(`WORLD-YIELD MAP SEQUENCE ${JSON.stringify(steps)}`);
 
+    // INTRODUCED TEST UPDATE (K1's APPROVED behaviour change, rulings 1, 3 and 4): steps 5 and 7 asserted keys: false, "held by the open Map, as
+    // designed", the superseded premise that the Map stops every key. Minimizing hands focus to the office's restore control (DiOfficePanel.tsx,
+    // focusExposed), a visible control outside the Map: it owns its keys, the app receives them, the world-pan listener does NOT run behind the Map, and
+    // Escape there leaves the Map open (no global fallback). Steps 2, 4 and 6 are the pan observable's POSITIVE CONTROL in this same sequence: the
+    // Map is not drawn, so the listener runs on the probe's ArrowDown.
+    const RESTORE = 'di-office-panel-collapsed';
     const expected = [
-      { controls: true, map: 1, keys: false },
-      { controls: false, map: 0, keys: true },
-      { controls: true, map: 1, keys: false },
-      { controls: false, map: 0, keys: true },
-      { controls: true, map: 1, keys: false },
-      { controls: false, map: 0, keys: true },
-      { controls: true, map: 1, keys: false },
+      { controls: true, map: 1, keys: false, pan: false, focus: null, escapeLeftMapOpen: null },
+      { controls: false, map: 0, keys: true, pan: true, focus: null, escapeLeftMapOpen: null },
+      { controls: true, map: 1, keys: false, pan: false, focus: null, escapeLeftMapOpen: null },
+      { controls: false, map: 0, keys: true, pan: true, focus: null, escapeLeftMapOpen: null },
+      { controls: true, map: 1, keys: true, pan: false, focus: RESTORE, escapeLeftMapOpen: true },
+      { controls: false, map: 0, keys: true, pan: true, focus: null, escapeLeftMapOpen: null },
+      { controls: true, map: 1, keys: true, pan: false, focus: RESTORE, escapeLeftMapOpen: true },
     ];
     // the expectation for "do the controls fit" is the arithmetic's own, so a change to the threshold cannot make this test lie
     const dock = [
@@ -285,7 +322,19 @@ test(
       assert.equal(
         s.handlersReceiveKeys,
         expected[i].keys,
-        `${s.step}: the page's key handlers ${expected[i].keys ? 'receive keys (a Map that is not drawn must not own the keyboard)' : 'are held by the open Map, as designed'}`,
+        `${s.step}: the page's key handlers ${expected[i].keys ? (expected[i].map === 1 ? 'receive keys (focus is on a visible control outside the Map: it owns them)' : 'receive keys (a Map that is not drawn must not own the keyboard)') : 'are held by the open Map, which owns the keyboard here'}`,
+      );
+      assert.notEqual(s.followed, null, `${s.step}: a character was followed, so the pan observable can change`);
+      assert.equal(
+        s.panListenerRan,
+        expected[i].pan,
+        `${s.step}: the world-pan listener ${expected[i].pan ? 'ran (positive control: the Map is not drawn)' : 'did NOT run (the Map is drawn)'}; listener execution, not motion`,
+      );
+      assert.equal(s.focus, expected[i].focus, `${s.step}: focus ${expected[i].focus === null ? 'is not part of this step' : `is on ${expected[i].focus}`}`);
+      assert.equal(
+        s.escapeLeftMapOpen,
+        expected[i].escapeLeftMapOpen,
+        `${s.step}: ${expected[i].escapeLeftMapOpen === null ? 'Escape is not pressed in this step' : 'Escape on the restore control leaves the Map open'}`,
       );
     });
   },

@@ -232,8 +232,8 @@ async function boot(deliveryId: string): Promise<void> {
 }
 
 async function openDetails(): Promise<void> {
+  // CHANGED IN B2a (Q8 = (a)): one click docks a Mission; the select-then-open second step (the removed card's Open Mission) is gone
   await p().click(`${sel('di-scan-row')}[data-mission-ref="${WF}"]`);
-  await p().click(sel('di-scan-open-mission'));
   await p().waitForSelector(sel('di-scan-delivery'));
 }
 
@@ -395,7 +395,9 @@ test(
       );
       return parts.length === 4 ? Number(parts[3]) : 1;
     };
-    const peer = await edgeOf(sel('di-scan-comments'));
+    // CHANGED IN B2c: the peer is "More actions", the one secondary control left in the action row, on the same control-edge rule (.di-scan-action-secondary);
+    // BEFORE: the Comments button, now an item inside that popover (an item is a row of a surface, with no edge of its own)
+    const peer = await edgeOf(sel('di-scan-more-actions'));
     assert.deepEqual({ style: peer.style, width: peer.width }, { style: 'solid', width: '1px' });
     assert.ok(alphaOf(peer.color) > 0, `the peer edge has a visible colour: ${peer.color}`);
     // THE READ CONTROL: a boundary a control needs to be seen, the same edge as the controls beside it
@@ -543,8 +545,9 @@ test(
     await boot(ID_A);
     await openDetails();
     await eligibleWithNotice();
-    // THE PEER in this frame, on the scan face's control edge token: the Comments button, as the read control's case measures it
-    const peer = await edgeIn(sel('di-scan-comments'));
+    // THE PEER in this frame, on the scan face's control edge token: CHANGED IN B2c, "More actions" (BEFORE: the Comments button, now an item of that
+    // popover), as the read control's case measures it
+    const peer = await edgeIn(sel('di-scan-more-actions'));
     assert.deepEqual({ style: peer.style, width: peer.width }, { style: 'solid', width: '1px' });
     assert.ok(alphaIn(peer.color) > 0, `the peer edge has a visible colour: ${peer.color}`);
     // BOTH CONTROLS, measured before either is judged, in one assertion so a failure shows both values

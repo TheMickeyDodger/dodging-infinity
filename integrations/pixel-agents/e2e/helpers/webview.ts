@@ -482,7 +482,8 @@ export async function openSettingsModal(frame: WebviewSurface): Promise<Locator>
 }
 
 async function closeSettingsModal(settingsModal: Locator): Promise<void> {
-  const closeButton = settingsModal.getByRole('button', { name: 'x', exact: true });
+  // the shared Modal's close control is named "Close <title>" (D1 pre-review 5), no longer only "x"
+  const closeButton = settingsModal.getByRole('button', { name: 'Close Settings', exact: true });
   await expect(closeButton).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   await closeButton.click();
   await expect(settingsModal).toBeHidden({ timeout: WEBVIEW_TIMEOUT_MS });

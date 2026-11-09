@@ -111,6 +111,8 @@ export function reviewOfferOf(mission: DiMission): DiScanReviewOffer {
 
 export type DiScanTab = 'open' | 'merged' | 'closed' | 'archived';
 
+/** The words for "this Mission is waiting on the operator": the row's pill and the Mission list's filter name the SAME criterion from one place, so the label and the behaviour cannot drift apart. */
+export const DI_NEEDS_YOU = 'Needs you';
 export const DI_SCAN_TABS: readonly { id: DiScanTab; label: string }[] = [
   { id: 'open', label: 'Open' },
   { id: 'merged', label: 'Merged' },
@@ -913,7 +915,7 @@ export function statusPillOf(row: DiScanRow): DiScanPill | null {
 
 /** Every row says its status (CONTROL-MAP "01 Home": status dot + word), exactly once and in the contract's words; Needs you is attention from Reception, beside it. */
 function pillsFor(status: DiMissionStatusResult, needsYou: DiScanKnown<boolean>): DiScanPill[] {
-  return [...(knownTrue(needsYou) ? [{ id: 'needs', label: 'Needs you', tone: 'needs' as const }] : []), statusPill(status)];
+  return [...(knownTrue(needsYou) ? [{ id: 'needs', label: DI_NEEDS_YOU, tone: 'needs' as const }] : []), statusPill(status)];
 }
 
 function roleKey(role: string): string {
@@ -1446,7 +1448,7 @@ export const DI_SCAN_LOCK: readonly DiScanRow[] = [
     description:
       'Redesign and implementation of the next iteration of the core panel system. Includes layout engine updates, responsive primitives, and migration plan.',
     pills: [
-      { id: 'needs', label: 'Needs you', tone: 'needs' },
+      { id: 'needs', label: DI_NEEDS_YOU, tone: 'needs' },
       SPECIMEN_RUNNING,
     ],
     tab: 'open',
@@ -1545,7 +1547,7 @@ export const DI_SCAN_V3_CAST: readonly DiScanRow[] = [
     description:
       'Group the Reception inbox by Mission, with one line on what each needs from you.',
     pills: [
-      { id: 'needs', label: 'Needs you', tone: 'needs' },
+      { id: 'needs', label: DI_NEEDS_YOU, tone: 'needs' },
       SPECIMEN_RUNNING,
     ],
     tab: 'open',
@@ -1567,7 +1569,7 @@ export const DI_SCAN_V3_CAST: readonly DiScanRow[] = [
     description:
       'Stop the readiness probe failing on slow starts, and settle how long the probe waits.',
     pills: [
-      { id: 'needs', label: 'Needs you', tone: 'needs' },
+      { id: 'needs', label: DI_NEEDS_YOU, tone: 'needs' },
       SPECIMEN_RUNNING,
     ],
     tab: 'open',
@@ -1625,7 +1627,7 @@ export const DI_SCAN_V3_CAST: readonly DiScanRow[] = [
     context: 'Proposal ready',
     description:
       'Add a dark mode toggle to Settings, put the theme tokens in pixel-agents so the world matches, and document it in the DI guide.',
-    pills: [{ id: 'needs', label: 'Needs you', tone: 'needs' }],
+    pills: [{ id: 'needs', label: DI_NEEDS_YOU, tone: 'needs' }],
     tab: 'open',
     needsYou: known(true),
     swarm: LOCK_SWARM,
@@ -1697,7 +1699,7 @@ export interface DiScanDiffFile {
   language: string;
   lines: readonly DiScanDiffLine[];
   /** Real data only: why there are no lines to draw (binary, withheld, not UTF-8, still being read ...), in words. */
-  notice?: { state: string; title: string; body: string };
+  notice?: { state: string; title: string; body: string; retry?: boolean };
   /** Real data only: a sentence under the lines (the file was cut short, and by how much). */
   foot?: string;
 }
@@ -1926,7 +1928,7 @@ export type DiScanDiffSource =
   // the office says no review is offered for this Mission (or the session was cleared): the route's own reason, in words
   | { kind: 'unavailable'; reason: string; title: string; detail: string }
   // asked, and the office or the backend refused: the route's own problem, in words
-  | { kind: 'refused'; reason: string; title: string; detail: string };
+  | { kind: 'refused'; reason: string; title: string; detail: string; retry?: boolean };
 
 export const DI_DIFF_NOT_READ = 'This office has not said whether a code review is offered for this Mission.';
 /** An offered review has not returned a listing yet. Not a layout preview, and not an empty diff. */

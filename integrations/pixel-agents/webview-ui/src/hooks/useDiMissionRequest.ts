@@ -63,6 +63,8 @@ export interface DiMissionRequestControl {
   /** Send the composer's words as one turn of the restricted, read-only conversation. */
   sendTurn: () => void;
   newConversation: () => void;
+  /** D1: close the conversation shown and return to a blank start, KEEPING the typed ask as the same input (nothing is sent). */
+  closeConversation: () => void;
   openConversation: (conversationId: string) => void;
   /**
    * New Mission shows the conversation IN PLACE (the scan face's one composer): while it does (`on` true), the open conversation is READ as the open
@@ -115,7 +117,18 @@ export function useDiMissionRequest(
   const deletesInFlight = useRef(new Map<string, number>());
   for (const [missionRef, seq] of deletesInFlight.current)
     if (state.nextSeq > seq && !state.pending.some((p) => p.seq === seq)) deletesInFlight.current.delete(missionRef);
+  // A conversation read, remembered the moment it is asked for, before the pending row is rendered. Released once that
+  // read is no longer pending. Keyed by conversation id, so a second ask for the same conversation sends nothing.
+  const conversationReadsInFlight = useRef(new Set<string>());
+  for (const id of conversationReadsInFlight.current)
+    if (!state.pending.some((p) => p.op === 'conversation' && p.conversationId === id))
+      conversationReadsInFlight.current.delete(id);
   const seqRef = useRef(1);
+  // When the watch last read the open conversation. Any conversation read,
+  // including one the person just asked for, stamps it: the next watch read
+  // waits a full cadence. A poll that was already due would otherwise fire
+  // while they are pressing Read again or the way out.
+  const lastPoll = useRef({ overview: 0, selected: 0, conversation: 0 });
 
   const ask = useCallback(
     (
@@ -124,6 +137,10 @@ export function useDiMissionRequest(
       meta: { requestRef?: string | null; turnId?: string | null; missionRef?: string | null } = {},
     ): void => {
       const seq = seqRef.current++;
+      if (op === 'conversation') {
+        lastPoll.current.conversation = Date.now();
+        if (typeof fields.conversationId === 'string') conversationReadsInFlight.current.add(fields.conversationId);
+      }
       dispatch({
         type: 'sent',
         seq,
@@ -133,6 +150,8 @@ export function useDiMissionRequest(
         missionRef: meta.missionRef ?? null,
         // review round 2: the conversation a read or a turn is about, kept with the request so its reply (failed or not) is attributed by identity
         conversationId: typeof fields.conversationId === 'string' ? fields.conversationId : null,
+        // D1: the words a turn sent, so its answer clears the box only while it still holds exactly them
+        text: op === 'turn' && typeof fields.text === 'string' ? fields.text : null,
       });
       transport.send(buildMessage(op, seq, fields));
     },
@@ -184,7 +203,6 @@ export function useDiMissionRequest(
   // is advanced by the progression runtime (dirun, MissionCore mode), not by this window asking. The
   // overview read (`refresh`) is the only message this hook sends while no workspace is open, and it
   // carries no field beyond `type`, `seq` and `op`; the code review's session guard allows exactly that.
-  const lastPoll = useRef({ overview: 0, selected: 0, conversation: 0 });
   // New Mission's in-place showing of the conversation (see watchConversation): while it is shown, the conversation is read at the open cadence
   const watching = useRef(0);
   useEffect(() => {
@@ -260,6 +278,7 @@ export function useDiMissionRequest(
   }, [ask]);
 
   const newConversation = useCallback(() => dispatch({ type: 'newConversation' }), []);
+  const closeConversation = useCallback(() => dispatch({ type: 'closeConversation' }), []);
   const watchConversation = useCallback((on: boolean) => {
     watching.current = Math.max(0, watching.current + (on ? 1 : -1));
     // a showing that begins reads at once, as opening the workspace does
@@ -267,7 +286,17 @@ export function useDiMissionRequest(
   }, []);
   const openConversation = useCallback(
     (conversationId: string) => {
+      // Keyed by THIS conversation, including a read asked for earlier in this turn that is not rendered as pending yet.
+      // While it is the conversation shown, a read already in flight is not asked again and does not reset what is shown.
+      // Close, or a pick of another conversation, leaves that read pending. Picking this one again selects it so the
+      // reply lands in it, and does not ask a second time. A conversation that is not already being read is opened and
+      // read at once, even while some other read is still pending.
+      const pendingThis =
+        conversationReadsInFlight.current.has(conversationId) ||
+        stateRef.current.pending.some((p) => p.op === 'conversation' && p.conversationId === conversationId);
+      if (pendingThis && stateRef.current.conversation.id === conversationId) return;
       dispatch({ type: 'openConversation', conversationId });
+      if (pendingThis) return;
       ask('conversation', { conversationId });
     },
     [ask],
@@ -445,6 +474,7 @@ export function useDiMissionRequest(
     setTyped,
     sendTurn,
     newConversation,
+    closeConversation,
     openConversation,
     watchConversation,
     submitDraft,

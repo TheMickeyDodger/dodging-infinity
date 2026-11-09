@@ -350,9 +350,8 @@ test(
   'C3/C4: after moving from one Mission to another, Code Diff shows the new Mission\'s first file (reviewer sequence: Home, Payment retry engine, rail Next panel overhaul, Code Diff)',
   async () => {
     const page = await open('di-scan-view=list');
-    // from Home, open Payment retry engine (select, then open)
+    // from Home, open Payment retry engine. CHANGED IN B2a (Q8 = (a)): one click docks a Mission; the select-then-open second step (the removed card's Open Mission) is gone
     const payments = '[data-testid="di-scan-row"][data-mission-ref="lock-payments"]';
-    await page.click(payments);
     await page.click(payments);
     expect(await stageView(page)).toBe('mission');
     expect(await text(page, sel('di-scan-mission-title'))).toBe('Payment retry engine');

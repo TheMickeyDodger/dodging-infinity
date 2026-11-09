@@ -588,3 +588,33 @@ test(
   },
   STEPS_MS,
 );
+
+// ── B1: the Map's key guard yields to a NON-MODAL claim in front ─────────────────────────────────────────────────────────────────────────
+// SYNTHETIC STATE INJECTION, labelled: B1 has no popover yet, so a non-modal claim is placed directly through the APP'S OWN diModalStack module (the page imports
+// the URL the app does: the same module instance; the positive control after the release would fail otherwise). The page code is a STRING so vitest's
+// transform never rewrites its import. This proves the BOOKKEEPING only: a rendered trigger, a real menu, a real pointer elsewhere and real focus are B2's.
+const STACK_URL = '/src/components/diModalStack.ts';
+test(
+  "B1 (SYNTHETIC injection): with the Map open, a NON-MODAL claim in front makes the Map's guard yield (keys reach the page, Escape leaves the Map open, nothing is inert); released, the guard owns the keyboard again and Escape closes the Map",
+  async () => {
+    await boot(1440, 900);
+    await p().click('[data-testid="world-view-map"]');
+    await p().waitForSelector(MAP_SEL);
+    assert.equal(await handlersReceiveKeys(), false, 'teeth: with the Map open its guard owns the keyboard');
+    const claimed = (await p().evaluate(
+      `(async () => { const stack = await import('${STACK_URL}'); const owner = { b1: 'injected non-modal claim' }; window.__b1Owner = owner; stack.claimFront(owner, { modal: false }); return { front: stack.frontCount(), modal: stack.modalFrontCount(), inert: document.getElementById('root')?.hasAttribute('inert') ?? null }; })()`,
+    )) as { front: number; modal: number; inert: boolean | null };
+    assert.deepEqual(claimed, { front: 1, modal: 0, inert: false }, 'a non-modal claim is in front, and it inerts nothing');
+    assert.equal(await handlersReceiveKeys(), true, "with a claim in front the Map's guard yields: keys reach the page");
+    await p().keyboard.press('Escape');
+    await p().waitForTimeout(300);
+    assert.equal(await mapDrawn(), 1, 'Escape did not close the Map: its guard stood down for the claim in front');
+    assert.equal(await p().evaluate(`(async () => (await import('${STACK_URL}')).releaseFront(window.__b1Owner))()`), true, 'the injected claim was foremost when released');
+    // the positive control: released, the Map's guard owns the keyboard again and the same key closes it
+    assert.equal(await handlersReceiveKeys(), false, 'released: the guard owns the keyboard again');
+    await p().keyboard.press('Escape');
+    await p().waitForSelector(MAP_SEL, { state: 'detached', timeout: 10_000 });
+    assert.equal(await mapDrawn(), 0, 'released: Escape closed the Map');
+  },
+  STEPS_MS,
+);

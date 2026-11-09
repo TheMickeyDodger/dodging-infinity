@@ -55,6 +55,12 @@ interface Target {
   note?: string;
   /** derived below 1500 px as about 0.72 of the target (the stylesheet's own convention); asserted only by the DERIVED test */
   scales?: boolean;
+  /** B3 1B: the control the menu took out of the header. RECORDED ABSENT with its reason, never deleted: the header must NOT draw it and nothing is measured. */
+  absent?: string;
+  /** B3 1B: re-derived for a control the menu changed. MEASURED, NOT APPROVED: no reference image draws the new tool set (an owner-approvable capture is owed to the final Brave run, row 10). */
+  provisional?: string;
+  /** B3 1B: the 1280 expectation for a provisional number the 0.72 convention does not derive (a row that mixes scaled and fixed parts): MEASURED, NOT APPROVED */
+  at1280?: number;
 }
 /** The painted-ring rule of the Mission Back box: DERIVED FROM THE REFERENCE by test/diRingPaintReference.test.ts (never from a candidate) and recorded here before any candidate result is used. */
 interface PaintRule {
@@ -225,6 +231,7 @@ function ink(png: PNG, r: Rect, grow: number, bg: [number, number, number], thr 
 
 interface Facts {
   L: number;
+  /** the stage's RIGHT edge (B2b: the window's width before the stage could dock beside the list) */
   W: number;
   bar: Rect;
   back: Rect | null;
@@ -233,7 +240,8 @@ interface Facts {
   crumb: Rect | null;
   crumbCount: number;
   crumbItems: Rect[];
-  tools: Rect[];
+  /** the header's tool buttons AT ANY DEPTH, each with its identity (B3 1B: Find and Settings moved into More, and the triggers sit inside their popover wrappers, so neither position nor direct-child membership identifies a tool) */
+  tools: Array<Rect & { id: string }>;
   heading: Rect | null;
   subtitle: Rect | null;
 }
@@ -257,7 +265,10 @@ async function facts(page: Page): Promise<Facts> {
     const crumb = bar.querySelector('.di-scan-crumb');
     return {
       L: sb.left + (parseFloat(getComputedStyle(stage).borderLeftWidth) || 0),
-      W: window.innerWidth,
+      // CHANGED IN B2b (Q9, scoping only: the frame the numbers are measured in, not what they expect): the right edge is the STAGE's. It equalled the
+      // window's while the stage ran to the window's edge; docked beside the list (two panes) it does not, and the rule scan ("95 % of the stage's width")
+      // and the tools' right inset both mean the stage's edge
+      W: sb.right,
       bar: rc(bar)!,
       back: rc(bar.querySelector('.di-scan-back')),
       mark: rc(bar.querySelector('.di-scan-mark svg')),
@@ -265,7 +276,7 @@ async function facts(page: Page): Promise<Facts> {
       crumb: rc(crumb),
       crumbCount: bar.querySelectorAll('.di-scan-crumb').length,
       crumbItems: crumb === null ? [] : [...crumb.children].map((c) => rc(c)!),
-      tools: [...bar.querySelectorAll('.di-scan-header-tools > button')].map((b) => rc(b)!),
+      tools: [...bar.querySelectorAll('.di-scan-header-tools button')].map((b) => ({ id: b.getAttribute('data-testid') ?? b.getAttribute('aria-label') ?? '', ...rc(b)! })),
       // the heading's and the subtitle's own TEXT (a Range over their contents), never their block boxes: those span the whole width and would take in whatever overlaps it (the tabs)
       heading: textRc(document.querySelector('.di-scan-comments-title')),
       subtitle: textRc(document.querySelector('.di-scan-comments-sub')),
@@ -358,17 +369,18 @@ async function measure(page: Page, view: View): Promise<Record<string, number>> 
     }
     set('rule.y', ruleY);
     if (view === 'diff') {
-      const t = f.tools.map((r) => ink(png, r, 4, bg));
-      set('tool.search.w', t[0]?.w);
-      set('tool.search.h', t[0]?.h);
-      set('tool.copy.w', t[1]?.w);
-      set('tool.gear.w', t[2]?.w);
-      set('tool.more.h', t[3]?.h);
-      const centres = t.map((i) => (i === null || i === undefined ? NaN : (i.x0 + i.x1) / 2));
-      const pitch = centres.length === 4 ? (centres[3]! - centres[0]!) / 3 : NaN;
-      set('tool.pitch', pitch);
-      const last = t[3];
-      set('tool.rightInset', last === null || last === undefined ? null : f.W - (last.x1 + 1));
+      // B3 1B: KEYED BY IDENTITY. Copy and the More trigger are what the header draws now; Find and Settings moved into More, so tool.search.* and tool.gear.w are not measured (the fixture records them ABSENT, and the loop below asserts they are not drawn)
+      const inkOf = (id: string) => {
+        const r = f.tools.find((x) => x.id === id);
+        return r === undefined ? null : ink(png, r, 4, bg);
+      };
+      const copy = inkOf('di-scan-diff-copy');
+      const more = inkOf('di-scan-diff-more');
+      set('tool.copy.w', copy?.w);
+      set('tool.more.h', more?.h);
+      const centres = [copy, more].map((i) => (i === null || i === undefined ? NaN : (i.x0 + i.x1) / 2));
+      set('tool.pitch', centres.length === 2 ? centres[1]! - centres[0]! : NaN);
+      set('tool.rightInset', more === null ? null : f.W - (more.x1 + 1));
     }
   } else {
     set('mark.count', f.markCount);
@@ -412,6 +424,13 @@ for (const view of ['diff', 'mission', 'comments'] as const) {
           const bad: string[] = [];
           for (const t of spec.targets) {
             const v = got[t.id];
+            if (t.absent !== undefined) {
+              // the menu took this control out of the header: nothing is measured and it must not be drawn there
+              const drawn = v !== undefined && Number.isFinite(v);
+              rows.push(`${drawn ? 'BAD' : 'ok '} ${t.id.padEnd(20)} ABSENT by design: ${t.absent}`);
+              if (drawn) bad.push(`${t.id}: measured ${v!.toFixed(1)} but it was moved (${t.absent})`);
+              continue;
+            }
             const ok = v !== undefined && Number.isFinite(v) && Math.abs(v - t.target) <= t.tol;
             rows.push(`${ok ? 'ok ' : 'BAD'} ${t.id.padEnd(20)} lock ${String(t.lock).padStart(5)}  target ${String(t.target).padStart(5)} +-${t.tol}  measured ${v === undefined || !Number.isFinite(v) ? 'absent' : v.toFixed(1)}`);
             if (!ok) bad.push(`${t.id}: measured ${v === undefined || !Number.isFinite(v) ? 'absent' : v.toFixed(1)}, target ${t.target} +-${t.tol} (the reference draws ${t.lock})`);
@@ -438,6 +457,11 @@ for (const view of ['diff', 'mission', 'comments'] as const) {
               }),
             );
             assert.deepEqual(covered, [], `${view} ${surface}: every point of every required tab is the topmost thing there (nine-point hit test, not a click)`);
+          }
+          if (view === 'diff') {
+            const stillDrawn = await page.evaluate(() => ['Find a file', 'Settings'].filter((label) => document.querySelector(`.di-scan-header-tools [aria-label="${label}"]`) !== null));
+            assert.deepEqual(stillDrawn, [], `${view} ${surface}: Find and Settings moved into More (1B): the header must not draw them`);
+            console.info(`PROVISIONAL ${view} ${surface}: ${spec.targets.filter((t) => t.provisional !== undefined).map((t) => t.id).join(', ') || '(none)'} (measured, not approved)`);
           }
           assert.deepEqual(bad, [], `${view} ${surface}: ${bad.length} of ${spec.targets.length} numbers are off the reference`);
           // MISSION ONLY: the layout rectangle is satisfied by a ring of zero contrast, so the ring must ALSO be PAINTED at that boundary (test/diRingPaint.ts). The rule was derived from the REFERENCE first and recorded in the fixture;
@@ -477,8 +501,8 @@ for (const view of ['diff', 'mission'] as const) {
           const got = await measure(page, view);
           const bad: string[] = [];
           const rows: string[] = [];
-          for (const t of fixture.views[view].targets.filter((x) => x.scales === true)) {
-            const want = t.target * 0.72;
+          for (const t of fixture.views[view].targets.filter((x) => x.scales === true && x.absent === undefined)) {
+            const want = t.at1280 ?? t.target * 0.72;
             const v = got[t.id];
             const ok = v !== undefined && Number.isFinite(v) && Math.abs(v - want) <= 2.5;
             rows.push(`${ok ? 'ok ' : 'BAD'} ${t.id.padEnd(20)} locked-scale ${String(t.target).padStart(5)}  x0.72 = ${want.toFixed(1).padStart(5)}  measured ${v === undefined || !Number.isFinite(v) ? 'absent' : v.toFixed(1)}`);
@@ -536,6 +560,10 @@ interface HomeEntry {
   size: [number, number];
   id: string;
   value: number;
+  /** B3 1B: a number that no longer exists because the tool set changed (Options replaced Settings and filter): recorded with its reason and expected NOT to be measured */
+  absent?: string;
+  /** B3 1B: re-derived for the declared change; MEASURED, NOT APPROVED (an owner-approvable capture is owed to the final Brave run, row 10) */
+  provisional?: string;
 }
 async function measureHome(page: Page): Promise<Record<string, number>> {
   return page.evaluate(() => {
@@ -544,7 +572,8 @@ async function measureHome(page: Page): Promise<Record<string, number>> {
     const out: Record<string, number> = {};
     const svg = r(head?.querySelector('.di-scan-mark svg') ?? null);
     const btn = r(head?.querySelector('.di-scan-mark') ?? null);
-    const tools = [...(head?.querySelectorAll('.di-scan-header-tools > button') ?? [])].map((b) => b.getBoundingClientRect());
+    // B3 1B: the tools AT ANY DEPTH (Options sits inside its popover wrapper); the inventory is what is drawn
+    const tools = [...(head?.querySelectorAll('.di-scan-header-tools button') ?? [])].map((b) => b.getBoundingClientRect());
     out['home.markSvg.w'] = svg === null ? NaN : +svg.width.toFixed(1);
     out['home.markSvg.h'] = svg === null ? NaN : +svg.height.toFixed(1);
     out['home.markBtn.w'] = btn === null ? NaN : +btn.width.toFixed(1);
@@ -581,7 +610,7 @@ const homeGuard = (fixture as unknown as { homeGuard?: { entries: HomeEntry[] } 
 for (const surface of ['specimen', 'real'] as const) {
   for (const size of [[1280, 720], [1672, 941]] as Array<[number, number]>) {
     test(
-      `HOME is UNCHANGED on the ${surface.toUpperCase()} at ${size[0]} x ${size[1]}: the header's mark and tool buttons keep the sizes recorded as Home's baseline (measured on the restored candidate; a baseline, not a reference)`,
+      `HOME on the ${surface.toUpperCase()} at ${size[0]} x ${size[1]}: the header's mark and height are UNCHANGED from Home's baseline, and the tool inventory is the one 1B declared (Options replaced Settings and filter; those numbers are PROVISIONAL: measured, not approved)`,
       async () => {
         if (skipIfUnavailable()) return;
         const page = await openHome(surface, size);
@@ -589,7 +618,7 @@ for (const surface of ['specimen', 'real'] as const) {
           const got = await measureHome(page);
           console.info(`HOME ${surface} ${size[0]}x${size[1]}: ${JSON.stringify(got)}`);
           const mine = homeGuard.entries.filter((e) => e.surface === surface && e.size[0] === size[0]);
-          const bad = mine.filter((e) => !(Math.abs((got[e.id] ?? NaN) - e.value) <= 0.6)).map((e) => `${e.id}: measured ${got[e.id]}, baseline ${e.value}`);
+          const bad = mine.filter((e) => (e.absent !== undefined ? Number.isFinite(got[e.id] ?? NaN) : !(Math.abs((got[e.id] ?? NaN) - e.value) <= 0.6))).map((e) => `${e.id}: measured ${got[e.id]}, ${e.absent !== undefined ? `expected absent (${e.absent})` : `baseline ${e.value}`}`);
           assert.deepEqual(bad, [], `${surface} ${size[0]}: Home moved`);
           assert.ok(mine.length > 0 || process.env.HOME_RECORD === '1', `${surface} ${size[0]}: no Home baseline recorded (run once with HOME_RECORD=1 to print it, then record it)`);
         } finally {

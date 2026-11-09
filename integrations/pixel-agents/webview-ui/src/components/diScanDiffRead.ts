@@ -229,7 +229,7 @@ function fileRecord(entry: DiCodeReviewEntry, session: ReviewSession): DiScanDif
         path,
         language,
         lines: [],
-        notice: { state: 'refused', title: said.title, body: said.body },
+        notice: { state: 'refused', title: said.title, body: said.body, retry: said.retry },
       };
     }
     return {
@@ -407,7 +407,7 @@ export function scanDiffFor(row: DiScanRow, session: ReviewSession | null): DiSc
   if (session.overview !== null) return readSource(session);
   if (session.refusal !== null) {
     const said = problemWords(session.refusal.problem, session.refusal.detail);
-    return { kind: 'refused', reason: said.title, title: said.title, detail: said.body };
+    return { kind: 'refused', reason: said.title, title: said.title, detail: said.body, retry: said.retry };
   }
   return { kind: 'reading', reason: DI_DIFF_READING };
 }

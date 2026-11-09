@@ -37,6 +37,7 @@ import {
   useLastContentFocus,
 } from './diMinimize.js';
 import { DiMinimizedChip } from './DiMinimizedTray.js';
+import { DiMinimizedTrayContext } from './diMinimizedTrayContext.js';
 import type { DiMissionRequestAccess } from './DiMissionRequestEntry.js';
 import { DiMissionRequestEntry } from './DiMissionRequestEntry.js';
 import type { MrDeletion } from './diMissionRequestModel.js';
@@ -181,6 +182,10 @@ interface DiOfficePanelProps {
   presentation?: 'scan' | 'operational';
   /** Opens Settings. Absent: the scan header's settings icon does nothing, and the rail's Settings says why. */
   onOpenSettings?: () => void;
+  /** B3 routes: the keyboard routes from Home to the Map and to the minimized surfaces (App owns the targets; each is absent where it could not act). */
+  onJumpToWorld?: () => void;
+  minimizedCount?: number;
+  onJumpToMinimized?: () => void;
   /** AC-4.4-26, scan face: a Mission to open because its agent or label was clicked in the world (`seq` makes each click count). */
   worldOpen?: { ref: string; seq: number } | null;
 }
@@ -2393,6 +2398,9 @@ function DiOfficePanelBody({
   receptionInbox = null,
   presentation = 'operational',
   onOpenSettings,
+  onJumpToWorld,
+  minimizedCount,
+  onJumpToMinimized,
   worldOpen = null,
 }: DiOfficePanelProps) {
   const [selectedId, setSelectedId] = useState<number | null>(officeState.selectedAgentId);
@@ -2507,7 +2515,8 @@ function DiOfficePanelBody({
   const noteRef = useRef<HTMLDivElement>(null);
   useStickyScrollPad(noteRef, asideRef, fixtureNote);
   // the scan face's fixed rail and stage: below fixture mode's label strip, and the panel's own list clear of the rail (diStickyPad.ts)
-  useScanFaceInsets(asideRef, noteRef, presentation === 'scan' && !collapsed, fixtureNote);
+  const trayEl = useContext(DiMinimizedTrayContext);
+  useScanFaceInsets(asideRef, noteRef, presentation === 'scan' && !collapsed, fixtureNote, trayEl);
   // Shift+Tab scrolls a control to the top of the scrollport and leaves it under the sticky note.
   // scroll-padding does not clear that case in Chrome, so a focus that still intersects the note is moved below it.
   useEffect(() => {
@@ -2778,6 +2787,7 @@ function DiOfficePanelBody({
       mission.setComposer !== undefined &&
       mission.sendTurn !== undefined &&
       mission.newConversation !== undefined &&
+      mission.closeConversation !== undefined &&
       mission.readConversation !== undefined &&
       mission.watchConversation !== undefined &&
       mission.openRequest !== undefined &&
@@ -2788,6 +2798,7 @@ function DiOfficePanelBody({
             setComposer: mission.setComposer,
             sendTurn: mission.sendTurn,
             newConversation: mission.newConversation,
+            closeConversation: mission.closeConversation,
             readConversation: mission.readConversation,
             watchConversation: mission.watchConversation,
             openAsk: (opener: HTMLElement) => mission.open('ask', opener),
@@ -2853,13 +2864,17 @@ function DiOfficePanelBody({
           )}
           <DiScanPanel
             rows={scanRows}
-            initialSelectedId={scanLock ? (DI_SCAN_LOCK[0]?.id ?? null) : null}
+            // B2b: a docked screen leaves this panel's own width free in two-pane mode
+            dockWidthPx={widthPx ?? DI_PANEL_WIDTH_PX}
             minimizeRef={minimizeRef}
             onMinimize={minimizePanel}
             onSelect={selectScanRow}
             onOpenRequestWorkspace={openRequests}
             newMissionRequest={newMissionRequest}
             onOpenSettings={onOpenSettings}
+            onJumpToWorld={onJumpToWorld}
+            minimizedCount={minimizedCount}
+            onJumpToMinimized={onJumpToMinimized}
             openRequest={worldOpen}
             reception={scanReception}
             onOpenRequestItem={openRequestItem}
@@ -2874,6 +2889,7 @@ function DiOfficePanelBody({
             onReviewBegin={review?.begin}
             onReviewEnd={review?.end}
             onReviewChoose={review?.choose}
+            onReviewRefresh={review?.refresh}
             // M8: Delivery under Swarm reads the ONE delivery the catalog links to the shown Mission, through its own session
             missionDelivery={missionDelivery}
             herdr={herdr}

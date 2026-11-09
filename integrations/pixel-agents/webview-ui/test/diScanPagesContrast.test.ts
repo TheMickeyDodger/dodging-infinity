@@ -50,6 +50,14 @@ function rule(selector: string): string {
   if (!m) throw new Error(`no rule ${selector} in diScanPages.css`);
   return m[1];
 }
+/** B2e: the token a declaration of `body` names, by property (`color` never matches `border-color`). */
+function declared(body: string, prop: string): string {
+  const m = new RegExp(`(?:^|;)\\s*${prop}:\\s*var\\(--di-([a-z0-9-]+)\\)\\s*(?:;|$)`).exec(body);
+  if (!m) throw new Error(`no ${prop}: var(--di-*) in the rule`);
+  return m[1];
+}
+/** B2e: the PICKED Recent ask (the pick is drawn: its edge, its fill and its words). */
+const PICKED = ".di-new-side .di-chip[aria-current='true']";
 
 /** The surfaces the pages paint text on (the stage, a card or well, a raised control, a selected fill). */
 const PAGE_SURFACES = ['scan-canvas', 'scan-well', 'scan-raised'];
@@ -66,6 +74,8 @@ const REVIEWED_BACKGROUNDS = new Set([
   'scan-line',
   'scan-ok',
   'scan-building',
+  // B2e: the picked Recent ask's fill, paired above (its words 4.5:1; its edge and the focus ring 3:1), registered only after those pairs passed
+  'scan-selected',
 ]);
 
 describe('text on the pages reads at 4.5:1', () => {
@@ -110,6 +120,12 @@ describe('text on the pages reads at 4.5:1', () => {
       expect(REVIEWED_BACKGROUNDS, `${selector} ${prop}: ${value}`).toContain(tokenOf(value));
     }
   });
+  it('the picked Recent ask (B2e): its words on its selected fill, both read from the rule as written', () => {
+    const picked = rule(PICKED);
+    const fill = declared(picked, 'background');
+    expect(fill).toBe('scan-selected');
+    expect(ratio(declared(picked, 'color'), fill), `the picked ask's words on ${fill}`).toBeGreaterThanOrEqual(AA);
+  });
   it('a muted chip keeps its 4.5:1 on hover: the hover surface is the raised one, not the hover tone', () => {
     expect(rule('.di-chip:hover:not(:disabled)')).toContain('background: var(--di-scan-raised)');
     expect(ratio('scan-muted', 'scan-raised')).toBeGreaterThanOrEqual(AA);
@@ -129,6 +145,15 @@ describe('edges, rings and state marks are visible (3:1)', () => {
     for (const selector of ['.di-chip', '.di-page-button', '.di-page-back', '.di-page-input', '.di-new-ask'])
       expect(rule(selector), selector).toContain('border: 1px solid var(--di-scan-edge)');
     for (const s of PAGE_SURFACES) expect(ratio('scan-edge', s), `edge on ${s}`).toBeGreaterThanOrEqual(BOUNDARY);
+  });
+  it("the picked Recent ask's mark (B2e): its edge against its own fill and against the page it sits on, and the focus ring on that fill", () => {
+    const picked = rule(PICKED);
+    const [edge, fill] = [declared(picked, 'border-color'), declared(picked, 'background')];
+    expect(edge).toBe('scan-yellow');
+    // the edge is the boundary between the fill (inside) and the page (outside: the pane and the chip list are transparent; the stage paints the canvas)
+    expect(ratio(edge, fill), `${edge} edge on its ${fill} fill`).toBeGreaterThanOrEqual(BOUNDARY);
+    expect(ratio(edge, 'scan-canvas'), `${edge} edge on the scan-canvas page`).toBeGreaterThanOrEqual(BOUNDARY);
+    expect(ratio('focus', fill), `focus ring on the ${fill} fill`).toBeGreaterThanOrEqual(BOUNDARY);
   });
   it('the current sibling is marked with the state underline, not purple', () => {
     expect(rule(".di-scan-sibling[aria-current='page']")).toContain(

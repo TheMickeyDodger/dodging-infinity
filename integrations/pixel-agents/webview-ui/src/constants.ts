@@ -513,6 +513,12 @@ export const DI_PANEL_WIDTH_PX = 428;
  * face's own threshold (DI_WORLD_SCAN_CONTROLS_MIN_PX, 240), not the pixel toolbar's 276.
  */
 export const DI_RAIL_WIDTH_PX = 200;
+/**
+ * Direction B, Q9 (the Lead, 2026-11-05): the scan face shows TWO panes (a screen docked between the rail and the Mission list, the list beside it)
+ * in a window this wide or wider, and ONE pane below (the screen covers the list, which stays mounted underneath). 1440 is the smaller shipping size
+ * (PRODUCT.md); 1280 was measured and does not fit two panes (verification/b/b2-measure/MEASUREMENT.md). DESIGN.md, Layout, states the rule.
+ */
+export const DI_SCAN_TWO_PANE_MIN_PX = 1440;
 /** How often the DI panel re-reads the canvas selection (a local UI read only). */
 export const DI_SELECTION_POLL_MS = 250;
 /**

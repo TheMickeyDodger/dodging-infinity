@@ -26,6 +26,13 @@
 .di-scan[data-stage='open'] {
   z-index: 43;
 }
+/* B3 (Restore): a ONE-PANE screen covers the dock as well, so the minimized-surface strip takes the window's edge instead, at the screen's own layer and,
+   being later in the document than the dock, ABOVE it; the screen ends where the strip begins (--scan-tray-w, below). Two panes leave the strip beside the
+   dock and the screen yields it, so this rule is for one pane only. Still BELOW the covering workspace (44). Read at the point (the aside not hidden). */
+body:has(.di-scan[data-stage='open'][data-two-pane='false']:not([hidden])) .di-min-tray {
+  right: 0;
+  z-index: 43;
+}
 
 .di-scan *,
 .di-scan *::before,
@@ -49,6 +56,15 @@
   background-position: left center;
   background-repeat: no-repeat;
   background-size: auto 100%;
+}
+
+/* B2a: Home (the Mission list) stays mounted in every view. The wrapper takes no part in the layout; while a screen covers it, it is hidden from sight,
+   from Tab and from the accessibility tree (visibility is inherited), and keeps its tab, scroll and filter. */
+.di-scan-home {
+  display: contents;
+}
+.di-scan-home[data-covered='true'] {
+  visibility: hidden;
 }
 
 .di-scan-body {
@@ -142,6 +158,25 @@
   background: var(--di-scan-raised);
   color: var(--di-scan-text);
 }
+/* 1B: a HELD icon button (aria-disabled, never `disabled`: it keeps its focus) is dimmed on the existing held ramp and does not re-fill on hover. */
+.di-scan-icon-button[aria-disabled='true'],
+.di-scan-icon-button[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--di-scan-icon);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* 1B (instance 6): Copy's outcome, beside the path in the editor bar; it may wrap, so its recovery sentence is never clipped. A failure reads in the page's text colour, a success in the muted one (existing tokens). */
+.di-scan-copy-result {
+  /* its own full row while it is shown, so its recovery sentence is never cut */
+  flex: 1 1 100%;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--di-scan-muted);
+}
+.di-scan-copy-result[data-ok='false'] {
+  color: var(--di-scan-text);
+}
 
 /* ---------- tabs + search ---------- */
 
@@ -189,7 +224,7 @@
   min-width: 22px;
   height: 20px;
   padding: 0 6px;
-  border-radius: 5px;
+  border-radius: var(--di-radius-sm);
   background: var(--di-scan-badge);
   color: var(--di-scan-text);
   font-size: 12px;
@@ -274,8 +309,7 @@
 
 /* H-2 (pass C, 01-home): Home's titles are compact and regular, the pills on the title row; Mission details keeps the
    pixel-lock scale (its own .di-scan-mission-title), untouched by these rules. */
-.di-scan-row .di-scan-title,
-.di-scan-detail .di-scan-title {
+.di-scan-row .di-scan-title {
   font-size: 14px;
   font-weight: 400;
   letter-spacing: 0;
@@ -285,14 +319,12 @@
   font-size: 13px;
   line-height: 1.3;
 }
-.di-scan-row .di-scan-pills,
-.di-scan-detail-top .di-scan-pills {
+.di-scan-row .di-scan-pills {
   gap: 6px;
   justify-content: flex-end;
   align-items: center;
 }
-.di-scan-row .di-scan-pill,
-.di-scan-detail .di-scan-pill {
+.di-scan-row .di-scan-pill {
   font-size: 12px;
   font-weight: 500;
   gap: 5px;
@@ -301,13 +333,13 @@
 .di-scan-row:hover {
   background: var(--di-scan-raised);
 }
-.di-scan-row[aria-pressed='true'] {
+/* B2a: the row of the DOCKED Mission (the same state as the rail's mark); a row is never marked with nothing docked */
+.di-scan-row[aria-current='true'] {
   border-color: var(--di-scan-yellow);
   background: var(--di-scan-selected);
 }
 
-.di-scan-row-top,
-.di-scan-detail-top {
+.di-scan-row-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -315,7 +347,7 @@
 }
 
 .di-scan-title {
-  font-size: 20px;
+  font-size: var(--di-text-title);
   font-weight: 650;
   letter-spacing: -0.02em;
   line-height: 1.2;
@@ -329,7 +361,7 @@
 }
 
 .di-scan-context {
-  font-size: 17px;
+  font-size: var(--di-text-title);
   line-height: 1.15;
   color: var(--di-scan-muted);
 }
@@ -346,12 +378,12 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 15px;
+  font-size: var(--di-text-read);
   font-weight: 650;
   line-height: 1.15;
   color: var(--di-scan-text);
   white-space: nowrap;
-  border-radius: 4px;
+  border-radius: var(--di-radius-sm);
   padding: 2px 8px 2px 5px;
   background: var(--di-scan-chip);
 }
@@ -369,18 +401,17 @@
   background: var(--di-scan-bad-chip);
 }
 .di-scan-pill[data-fill='solid'] {
-  height: 38px;
-  padding: 0 20px;
-  gap: 16px;
+  padding: var(--di-space-1) var(--di-space-4);
+  gap: var(--di-space-2);
   border-radius: 8px;
   border: 2px solid transparent;
-  font-size: 24px;
+  font-size: var(--di-text-sm);
   font-weight: 700;
   color: var(--di-on-accent);
 }
 .di-scan-pill[data-fill='solid'] .di-scan-dot {
-  width: 14px;
-  height: 14px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 .di-scan-pill[data-fill='solid'] .di-scan-dot[data-tone='needs'] {
@@ -479,61 +510,16 @@
   color: var(--di-scan-bad-line);
 }
 
-/* ---------- expanded detail ---------- */
-
-.di-scan-detail {
-  flex-shrink: 0;
-  min-width: 0;
-  max-width: 100%;
-  margin: 8px 12px 8px;
-  padding: 22px 14px 8px 20px;
-  border: 1px solid var(--di-scan-yellow);
-  border-radius: 10px;
-  background: var(--di-scan-bg);
-  overflow: hidden;
-}
-
-
-
-.di-scan-desc {
-  margin: 8px 0 10px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--di-scan-muted);
-  min-width: 0;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-}
-
-.di-scan-swarm {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  margin: 0 0 4px;
-  padding: 0;
-  list-style: none;
-}
-
-.di-scan-member {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 3px;
-  min-width: 0;
-}
+/* ---------- roster pieces: role, name, avatar (Mission details' swarm cards; Home's inline card, which also used them, is removed in B2a) ---------- */
 
 .di-scan-role {
-  font-size: 15px;
+  font-size: var(--di-text-sm);
   line-height: 1.15;
   color: var(--di-scan-muted);
 }
 
 .di-scan-name {
-  font-size: 16px;
+  font-size: var(--di-text-base);
   font-weight: 650;
   color: var(--di-scan-text);
   max-width: 100%;
@@ -553,54 +539,6 @@
   background-size: 291px 250px;
   background-position: 0 0;
   box-shadow: inset 0 0 0 1px var(--di-scan-line);
-}
-
-/* H-3 (pass C, 01-home): per role, its word above a SMALL avatar with the name beside it (Mission details keeps its
-   four large cards, .di-scan-card*, untouched). */
-.di-scan-detail .di-scan-swarm {
-  gap: 8px;
-  margin: 0 0 10px;
-}
-.di-scan-detail .di-scan-member {
-  align-items: flex-start;
-  text-align: left;
-  gap: 6px;
-}
-.di-scan-detail .di-scan-role {
-  font-size: 12px;
-}
-.di-scan-member-who {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-}
-.di-scan-detail .di-scan-avatar {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
-/* the same sheet framing as the 50px avatar, scaled to 28px (291 x 250 at 50px); named per variant so the later
-   unscoped [data-bust] rules cannot win on order */
-.di-scan-detail .di-scan-avatar[data-bust='sheet'] {
-  background-size: 163px 140px;
-}
-.di-scan-detail .di-scan-avatar[data-bust='true'] {
-  background-size: cover;
-}
-.di-scan-detail .di-scan-name {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.di-scan-detail-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 4px;
-  border-top: 1px solid var(--di-scan-line);
 }
 
 .di-scan-trash {
@@ -638,22 +576,6 @@
   justify-content: flex-end;
 }
 
-.di-scan-detail-open {
-  appearance: none;
-  display: block;
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-  overflow: hidden;
-}
-
 .di-scan-avatar[data-bust='true'] {
   background-size: cover;
   background-position: center center;
@@ -666,6 +588,27 @@
 
 /* ---------- click-in stage (mission, diff, comments); its left edge is the rail's (set inline) ---------- */
 
+/* B2b: the cheap keyboard path to the list while a screen is docked (two panes only). The screen's first stop, drawn only while it has focus (a skip
+   link): off the top of the stage otherwise, never covering anything. Tokens only. */
+.di-scan-to-list {
+  position: absolute;
+  top: var(--di-space-3);
+  left: var(--di-space-5);
+  z-index: 2;
+  padding: var(--di-space-2) var(--di-space-4);
+  border: 1px solid var(--di-scan-edge);
+  border-radius: var(--di-radius);
+  background: var(--di-scan-raised);
+  color: var(--di-scan-text);
+  font: inherit;
+  font-size: var(--di-text-base);
+  cursor: pointer;
+  transform: translateY(-300%);
+}
+.di-scan-to-list:focus {
+  transform: none;
+}
+
 .di-scan-stage {
   position: fixed;
   z-index: 30;
@@ -673,7 +616,8 @@
   /* a narrow stage reflows what it shows (diScanPages.css, and the pills below) */
   container-type: inline-size;
   container-name: scanstage;
-  right: 0;
+  /* B3: ends where the minimized-surface strip begins (App sets --scan-tray-w while the strip holds chips), so no screen is under a Restore control */
+  right: var(--scan-tray-w, 0px);
   bottom: 0;
   display: flex;
   flex-direction: column;
@@ -712,7 +656,7 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
-  font-size: 24px;
+  font-size: var(--di-text-sm);
   color: var(--di-scan-muted);
 }
 .di-scan-crumb button,
@@ -743,14 +687,14 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 34px 48px 10px;
+  padding: 0 var(--di-layout-2) var(--di-layout-3) 10px;
   display: flex;
   flex-direction: column;
 }
 
 .di-scan-mission-title {
-  margin: 24px 0 19px 8px;
-  font-size: 56px;
+  margin: var(--di-layout-1) 0 19px 8px;
+  font-size: var(--di-text-title);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -761,7 +705,7 @@
   display: flex;
   flex-direction: column;
   min-height: 348px;
-  margin-top: 30px;
+  margin-top: var(--di-layout-2);
   padding: 21px 30px 16px;
   border: 1px solid var(--di-scan-well-edge);
   border-radius: 8px;
@@ -771,26 +715,26 @@
 .di-scan-swarm-heading {
   margin: 0 0 12px;
   color: var(--di-scan-heading);
-  font-size: 30px;
+  font-size: var(--di-text-read);
   font-weight: 700;
 }
 .di-scan-card h2 {
   margin-bottom: 17px;
-  font-size: 30px;
-  line-height: 36px;
+  font-size: var(--di-text-read);
+  line-height: 1.25;
 }
 .di-scan-card p {
-  max-width: 1034px;
+  max-width: 70ch;
   margin: 0 0 19px;
-  font-size: 24px;
-  line-height: 35px;
+  font-size: var(--di-text-read);
+  line-height: 1.45;
   color: var(--di-scan-text);
   overflow-wrap: anywhere;
 }
 .di-scan-card p.di-scan-handoff {
-  max-width: 1034px;
+  max-width: 70ch;
   margin: 0;
-  line-height: 35px;
+  line-height: 1.45;
   color: var(--di-scan-text);
 }
 /* Mission details: the full objective scrolls INSIDE the card (no character cap); the heading and the foot stay fixed. */
@@ -836,29 +780,29 @@
 }
 .di-scan-card-foot .di-scan-meta {
   text-align: left;
-  font-size: 22px;
-  line-height: 30px;
+  font-size: var(--di-text-sm);
+  line-height: 1.4;
 }
 /* the footer's lines are not body paragraphs: they take the footer's size and no paragraph spacing */
 .di-scan-card .di-scan-card-foot p {
   margin: 0;
-  font-size: 22px;
-  line-height: 30px;
+  font-size: var(--di-text-sm);
+  line-height: 1.4;
 }
 .di-scan-card-foot .di-scan-meta-line svg {
-  width: 28px;
-  height: 28px;
+  width: 14px;
+  height: 14px;
 }
 .di-scan-updated {
   margin: 0;
   color: var(--di-scan-muted);
-  font-size: 22px;
-  line-height: 30px;
+  font-size: var(--di-text-sm);
+  line-height: 1.4;
 }
 
 .di-scan-swarm-heading {
   margin: 14px 0 8px 8px;
-  line-height: 36px;
+  line-height: 1.25;
 }
 
 /* The pixel-lock composition: FOUR separately outlined cards with gutters, not one outlined container (D-2). */
@@ -892,23 +836,37 @@
   min-width: 0;
   gap: 2px;
 }
+/* B2b correction (the Lead's ruling: an avatar may change SIZE, never SHAPE). The member avatar never shrinks, and the card's row WRAPS when the
+   copy's longest word cannot sit beside it, so the copy drops below the avatar in THAT card only; the others keep their row. The copy's
+   line-breaking size is its min-content, so a card wraps exactly when its own copy does not fit. A smaller square cannot hold: the existing avatar
+   sizes are 50, 58 and 80px, and the narrowest measured card (Mia's copy, 111px) leaves at most 35px at 1440 and 33px at 1500. */
+.di-scan-card-member {
+  flex-wrap: wrap;
+}
+.di-scan-card-member > .di-scan-avatar {
+  flex-shrink: 0;
+}
+.di-scan-card-member > .di-scan-card-copy {
+  flex: 1 1 0%;
+  min-width: min-content;
+}
 .di-scan-note {
-  font-size: 15px;
+  font-size: var(--di-text-sm);
   line-height: 1.25;
   color: var(--di-scan-muted);
 }
 .di-scan-card-copy .di-scan-note {
-  font-size: 21px;
+  font-size: var(--di-text-sm);
 }
 .di-scan-avatar-lg {
   width: 80px;
   height: 80px;
 }
 .di-scan-card-copy .di-scan-role {
-  font-size: 16px;
+  font-size: var(--di-text-sm);
 }
 .di-scan-card-copy .di-scan-name {
-  font-size: 24px;
+  font-size: var(--di-text-base);
   font-weight: 700;
 }
 
@@ -928,19 +886,20 @@
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin: 26px 0 12px 8px;
+  margin: var(--di-layout-2) 0 12px 8px;
 }
 .di-scan-section-heading {
   margin: 0;
   color: var(--di-scan-heading);
-  font-size: 16px;
+  font-size: var(--di-text-read);
   font-weight: 700;
   line-height: 1.08;
 }
 .di-scan-fixture-tag {
+  white-space: nowrap;
   padding: 1px 6px;
   border: 1px solid var(--di-scan-line);
-  border-radius: 4px;
+  border-radius: var(--di-radius-sm);
   color: var(--di-scan-muted);
   font-size: 12px;
   font-weight: 600;
@@ -1111,6 +1070,36 @@
   cursor: not-allowed;
   opacity: 0.55;
 }
+
+/* B2e R22 (X1): a stage control the request workspace COVERS is isolated (inert, still drawn: diCoverIsolation.ts). Where a sliver of it shows past the
+   workspace's edge, it is drawn with the stage's own unavailable treatment, so it never looks live while a pointer on it does nothing (measured by the X1
+   check). Opacity only: an inert control is never hit-tested, so a cursor set on it could never show. Controls only (a marked scroller is not dimmed), and
+   never twice (a marked control inside another marked control keeps its ancestor's). */
+.di-scan-stage
+  :is(
+    a[href],
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [tabindex],
+    [contenteditable='true']
+  )[data-di-covered]:not(
+    :is(
+        a[href],
+        button,
+        input,
+        select,
+        textarea,
+        summary,
+        [tabindex],
+        [contenteditable='true']
+      )[data-di-covered]
+      *
+  ) {
+  opacity: 0.55;
+}
 .di-scan-dot[data-tone='idle'] {
   background: var(--di-scan-muted);
 }
@@ -1121,19 +1110,18 @@
   display: flex;
   align-items: center;
   gap: 22px;
-  margin-top: 30px;
+  margin-top: var(--di-layout-2);
   padding-left: 8px;
 }
 .di-scan-action {
   appearance: none;
   border: 0;
   cursor: pointer;
-  flex: 0 0 264px;
-  width: 264px;
-  height: 66px;
+  flex: 0 0 auto;
+  height: 36px;
   padding: 0 16px;
   border-radius: 10px;
-  font-size: 22px;
+  font-size: var(--di-text-base);
   font-weight: 700;
   color: var(--di-on-accent);
 }
@@ -1153,28 +1141,32 @@
 }
 .di-scan-trash-boxed {
   margin-left: auto;
-  width: 74px;
-  height: 66px;
-  flex: 0 0 74px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   border: 1px solid var(--di-scan-edge);
   border-radius: 10px;
   background: transparent;
   color: var(--di-scan-icon);
 }
 .di-scan-trash-boxed svg {
-  width: 26px;
-  height: 30px;
+  width: 16px;
+  height: 18px;
 }
+/* B2c (the Lead's ruling (i)): the notes STACK at every width. Herdr's status line leads, at the screen's full width (A1: a section leads with
+   ONE status line; side by side with the Trash notes it had about 357 px at 1440 docked, computed, and wrapped); the Trash notes follow, under
+   the Trash control, at their own width. */
 .di-scan-actions-notes {
   display: flex;
-  justify-content: space-between;
-  gap: 24px;
+  flex-direction: column;
+  gap: var(--di-space-5);
   padding-left: 8px;
 }
 .di-scan-actions-notes .di-scan-stage-note {
   margin-left: 0;
 }
 .di-scan-trash-notes {
+  align-self: flex-end;
   max-width: 380px;
   text-align: right;
 }
@@ -1290,9 +1282,9 @@
   justify-content: space-between;
   padding: 10px 12px;
   color: var(--di-scan-muted);
-  font-size: 12px;
+  font-size: var(--di-text-label);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--di-label-tracking);
 }
 .di-scan-tree ul {
   list-style: none;
@@ -1351,16 +1343,31 @@
   display: flex;
   flex-direction: column;
 }
+/* B2d: the file tree's collapse, in the editor bar (the Diff layout select's own look: one control family in that bar) */
+.di-scan-files-toggle {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 6px;
+  background: var(--di-scan-raised);
+  color: var(--di-scan-text);
+  font-family: var(--di-font-ui);
+  font-size: var(--di-text-sm);
+  cursor: pointer;
+}
 .di-scan-editor-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--di-scan-line);
 }
 .di-scan-editor-path {
-  flex: 1;
-  min-width: 0;
+  /* a floor, so the path is never squeezed to nothing by the controls beside it; the flex BASIS is the floor, so the row wraps only when even the floor does not fit (compose-8: with a 14em basis the bar wrapped at a 689px stage where one row fit) */
+  flex: 1 1 10em;
+  min-width: 10em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1376,18 +1383,21 @@
   color: var(--di-scan-text);
   padding: 0 8px;
 }
+/* B2d, a NAMED font delta (the Supervisor's ruling): the editor's code and path consume DESIGN.md's `--di-font-code` system stack, as the other code
+   panels do. It had declared 'JetBrains Mono' first, a face the product never shipped: where that face is INSTALLED, rendering CHANGES. A system stack,
+   so its metrics still vary by platform: code is sized and measured in px, never in characters. */
 .di-scan .di-scan-editor-body,
 .di-scan .di-scan-editor-body *,
 .di-scan .di-scan-editor-path {
-  font-family: 'JetBrains Mono', var(--di-font-code);
+  font-family: var(--di-font-code);
 }
 .di-scan-editor-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 10px 0 16px;
-  font-family: 'JetBrains Mono', var(--di-font-code);
-  font-size: 13px;
+  font-family: var(--di-font-code);
+  font-size: var(--di-text-sm);
   line-height: 1.55;
 }
 .di-scan-editor-empty {
@@ -1402,7 +1412,7 @@
 }
 .di-scan-gutter-head {
   color: var(--di-scan-muted);
-  font-size: 11px;
+  font-size: var(--di-text-sm);
   padding: 0 0 4px;
 }
 .di-scan-gutter-head span,
@@ -1439,6 +1449,34 @@
 .di-scan-sign {
   display: inline-block;
   width: 1.2em;
+}
+/* B3, the optional soft wrap (off by default; the unwrapped code keeps its horizontal scroll and its column alignment). A DISPLAY preference: the same text, the same indentation and tabs
+   (pre-wrap keeps them), the same font and size; a long line breaks anywhere rather than being cut. The row stays one row with one code cell, so a changed line is still one band and its line
+   numbers sit on its FIRST visual row; continuation rows hang 1.2em in (the width of the +/- sign), which is how they read as part of the line above. */
+.di-scan-editor-body[data-wrap='true'] .di-scan-diff-line {
+  align-items: start;
+}
+.di-scan-editor-body[data-wrap='true'] .di-scan-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-left: 1.2em;
+  text-indent: -1.2em;
+}
+.di-scan-wrap-toggle {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--di-scan-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.di-scan-wrap-toggle:hover,
+.di-scan-wrap-toggle[aria-pressed='true'] {
+  background: var(--di-scan-raised);
 }
 .di-scan-tok-key {
   color: var(--di-scan-code-key);
@@ -1528,82 +1566,66 @@
   overflow: auto;
 }
 .di-scan-comments-view {
-  padding: 28px 40px;
+  padding: var(--di-layout-2) var(--di-layout-3);
 }
 .di-scan-comments-view h1 {
   margin: 8px 0 12px;
-  font-size: 28px;
+  font-size: var(--di-text-title);
 }
 .di-scan-comments-view p {
   margin: 0;
   color: var(--di-scan-muted);
-  font-size: 15px;
+  font-size: var(--di-text-read);
+  max-width: 70ch;
 }
 
 /* The product dock is 420px. The lock frame is wider, and those measurements stay. Below that, the list compresses so the header, tabs and rows stay inside the dock. */
-/* Mission details below 1500 px wide (the v3 02 twin is 1280 x 720): the same composition at about 0.72 of the pixel-lock
-   scale, so Swarm stays on the first screen. Fixed px at a width breakpoint (never viewport units), so browser zoom still
-   enlarges the text. At 1500 px and wider the pixel-lock 02 scale above applies (measured at 1672 x 941). */
-@media (max-width: 1499px) {
-  .di-scan-stage-bar {
+/* Mission details below 1500 px wide: its CONTAINERS and component dimensions at about 0.72 of the pixel-lock scale (the v3 02 twin is
+   1280 x 720). B2b: the TYPE is DESIGN.md's ramp at every width (never width-dependent), so no size, px line-height or text-sized box is set here;
+   the containers and components here are kept as they were (not forced by the ramp; off the spacing scale, recorded in b2b-record.md). */
+/* F-b, FOLDED IN (the Lead's (a)): the stage BAR's own compact rules (its top padding, and Back's size, 12 px narrower: the extra that made F-b's computed
+   channel wrong) follow the SAME key as the header's scale (diScanPages.css): one pane by the panes STATE, docked by the stage's own width (under 1015,
+   FIT-DERIVED: no design reference exists for a docked layout). `:where()` keeps each selector's specificity what it was (one class), so the
+   view-specific bar rules (Code Diff, Mission details, Comments) still win exactly where they won before; the rules stay at this position, after the
+   base rules, as before. Back is drawn only inside the stage, so the container query covers every use. */
+:where(.di-scan-body[data-panes='one']) .di-scan-stage-bar {
+  padding-top: 18px;
+}
+:where(.di-scan-body[data-panes='one']) .di-scan-back {
+  width: 34px;
+  height: 36px;
+}
+@container scanstage (width < 1015px) {
+  :where(.di-scan-body[data-panes='two']) .di-scan-stage-bar {
     padding-top: 18px;
   }
-  .di-scan-back {
+  :where(.di-scan-body[data-panes='two']) .di-scan-back {
     width: 34px;
     height: 36px;
   }
-  .di-scan-crumb {
-    font-size: 17px;
-  }
+}
+/* NOT F-b (a DIFFERENT surface: Mission details' content, not the header): these stay keyed to the WINDOW. A named same-class instance (a value keyed
+   to the window where its room is the stage), CARRIED, like the Code Diff body's block (diScanPages.css), not fixed by F-b. */
+@media (max-width: 1499px) {
   .di-scan-mission-title {
     margin: 16px 0 13px 8px;
-    font-size: 40px;
-  }
-  .di-scan-pill[data-fill='solid'] {
-    height: 30px;
-    padding: 0 14px;
-    gap: 12px;
-    font-size: 18px;
-  }
-  .di-scan-pill[data-fill='solid'] .di-scan-dot {
-    width: 11px;
-    height: 11px;
   }
   .di-scan-card {
     min-height: 250px;
-    margin-top: 21px;
+    margin-top: var(--di-layout-1);
     padding: 15px 22px 12px;
-  }
-  .di-scan-card h2,
-  .di-scan-swarm-heading {
-    font-size: 22px;
   }
   .di-scan-card h2 {
     margin-bottom: 12px;
-    line-height: 26px;
-  }
-  .di-scan-card p,
-  .di-scan-card p.di-scan-handoff {
-    font-size: 17px;
-    line-height: 25px;
   }
   .di-scan-card p {
     margin-bottom: 13px;
   }
-  .di-scan-card .di-scan-card-foot p {
-    font-size: 16px;
-    line-height: 22px;
-  }
   .di-scan-card-foot {
     padding-top: 10px;
   }
-  .di-scan-card-foot .di-scan-meta-line svg {
-    width: 20px;
-    height: 20px;
-  }
   .di-scan-swarm-heading {
     margin: 10px 0 6px 8px;
-    line-height: 26px;
   }
   .di-scan-cards {
     gap: 11px;
@@ -1616,29 +1638,6 @@
   .di-scan-avatar-lg {
     width: 58px;
     height: 58px;
-  }
-  .di-scan-card-copy .di-scan-role {
-    font-size: 12px;
-  }
-  .di-scan-card-copy .di-scan-name {
-    font-size: 17px;
-  }
-  .di-scan-card-copy .di-scan-note {
-    font-size: 15px;
-  }
-  .di-scan-fact {
-    font-size: 12px;
-  }
-  .di-scan-action {
-    flex-basis: 190px;
-    width: 190px;
-    height: 48px;
-    font-size: 16px;
-  }
-  .di-scan-trash-boxed {
-    flex-basis: 54px;
-    width: 54px;
-    height: 48px;
   }
 }
 
@@ -1722,7 +1721,7 @@
   height: 25px;
 }
 .di-rail-wordmark-world {
-  font-size: 24px;
+  font-size: var(--di-text-title);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1;
@@ -1737,7 +1736,7 @@
   border-radius: 8px;
   background: var(--di-scan-accent);
   color: var(--di-on-accent);
-  font-size: 15px;
+  font-size: var(--di-text-read);
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -1761,7 +1760,7 @@
   border-radius: 8px;
   background: transparent;
   color: var(--di-scan-text);
-  font-size: 15px;
+  font-size: var(--di-text-read);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -1896,6 +1895,7 @@
     gap: 12px;
   }
   .di-scan-trash-notes {
+    align-self: stretch;
     max-width: none;
     text-align: left;
   }
@@ -1910,7 +1910,6 @@
     min-height: 28px;
     padding: 4px 8px;
     gap: 6px;
-    font-size: 13px;
     overflow-wrap: anywhere;
   }
 }
@@ -1945,4 +1944,43 @@
     max-width: 100%;
     white-space: normal;
   }
+}
+
+/* B3 routes: a JUMP control is a real, labelled button, visually hidden until it takes focus; focused, it is drawn IN THE FLOW (so nothing is covered and no ancestor clips it) on the existing raised fill, edge and radius.
+   It is rendered only where it can act. Hiding it by clipping (not display:none) keeps it in the Tab order. */
+.di-jump {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.di-jump:focus-visible {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 4px 8px;
+  padding: 4px 10px;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  background: var(--di-scan-raised);
+  color: var(--di-scan-text);
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.di-jump-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+/* B3: every control in the editor bar keeps its size (the Files toggle, the Wrap toggle, the layout select, the tag, Close); only the path and the Copy outcome flex. */
+.di-scan-editor-bar > :not(.di-scan-editor-path):not(.di-scan-copy-result) {
+  flex: 0 0 auto;
 }

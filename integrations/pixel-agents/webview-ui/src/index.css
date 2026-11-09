@@ -177,6 +177,12 @@
   --di-space-5: 12px;
   --di-space-6: 14px;
   --di-space-7: 18px;
+  /* LAYOUT spacing (Direction B, B2b; the Lead's ruling (A), 2026-11-05): a scale DISTINCT from the component spacing above, for space that frames a
+     screen or separates its top-level regions (gutters, section separation). Consolidates the scan face's legacy layout values (20 to 48 px) into the
+     fewest steps the rendered evidence supported; mapping and rationale in DESIGN.md, Layout. Component-internal space never uses these. */
+  --di-layout-1: 24px;
+  --di-layout-2: 32px;
+  --di-layout-3: 48px;
   /* radius */
   --di-radius-sm: 6px;
   --di-radius: 8px;

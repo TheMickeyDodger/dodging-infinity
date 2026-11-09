@@ -24,6 +24,8 @@ export interface DiCodeReviewAccess {
   begin?: (target: ReviewTargetRef) => void;
   end?: () => void;
   choose?: (path: string | null) => void;
+  /** Ask for the overview again (the scan face's Refresh, which an error advises). */
+  refresh?: () => void;
 }
 
 export function DiCodeReviewEntry({

@@ -1096,6 +1096,12 @@ export interface MrPending {
   missionRef?: string | null;
   /** The conversation a `conversation` read or a `turn` was about, as sent (review round 2: a reply, failed or not, is attributed by this). */
   conversationId?: string | null;
+  /** D1: the words a `turn` sent, exactly. Its answer clears the box only while the box still holds exactly these, as the SAME input. */
+  text?: string | null;
+  /** D1 (pre-review 1): the shown-conversation epoch when this was sent. A blank-start answer is adopted only while that epoch still holds. */
+  conversationEpoch?: number;
+  /** D1 (ownership): the composer epoch when this was sent. Equal text typed since is a newer draft, not the sent input. */
+  composerEpoch?: number;
 }
 
 /**
@@ -1173,6 +1179,17 @@ export function omittedWords(conversation: MrConversation): string | null {
 
 export type MrTab = 'ask' | 'requests';
 
+/** D1b: what was typed for one request while it was chosen: its decision word and a change request's reason, exactly. */
+export interface MrHeldInput {
+  typed: string;
+  changeReason: string;
+  /**
+   * The display the decision word was typed for (request, Mission, revision, digest), or null when no valid display was shown. The word comes back
+   * only onto that same display; a revised or invalidated request gets its reason back but never the word.
+   */
+  binding: MrBinding | null;
+}
+
 export interface MrState {
   open: boolean;
   tab: MrTab;
@@ -1184,11 +1201,30 @@ export interface MrState {
   selectedRef: string | null;
   views: Record<string, MrView>;
   conversation: MrConversation;
+  /**
+   * D1 (pre-review 1): changes whenever the person changes WHICH conversation is shown (opening a Recent conversation, closing one, starting a new one).
+   * A late answer to a turn sent from a blank start is adopted only while the epoch it was sent under still holds: that is the ORIGINAL blank, not a
+   * blank reached later.
+   */
+  conversationEpoch: number;
   composer: string;
+  /**
+   * D1 (ownership): changes whenever the box's input is replaced, by the person's typing or by a reset that empties it. Closing a conversation while
+   * keeping the ask does NOT change it: that is the same input. A turn's answer clears the box only while the box holds the input that was sent, the same
+   * epoch and the same text; equal text alone is not proof that it is the same input.
+   */
+  composerEpoch: number;
   revising: string | null;
   typed: string;
   /** (c): the reason being written for a change request on the selected proposal, kept exactly as typed. */
   changeReason: string;
+  /**
+   * D1b: the words typed for each request that is NOT the one chosen now (its decision word, a change request's reason), kept WITH the request they
+   * were typed for. Choosing another request, or none, puts the chosen one's words here and gives the newly chosen one back its own; they are never
+   * shown for any other request (round 61/62: input never follows to another request). They are cleared where that request's own words are cleared
+   * (its display invalidated, its offer dropped, its decision or outcome recorded). Never holds the chosen request.
+   */
+  heldInputs: Readonly<Record<string, MrHeldInput>>;
   /**
    * (c), round 61: Reject's first step, armed FOR exactly what it would reject (the request, proposal and offer then shown).
    * The confirmation is offered, and Reject is sent, only while that is still exactly what is shown; null when not armed.
@@ -1201,6 +1237,8 @@ export interface MrState {
   withdrawArm: MrBinding | null;
   pending: MrPending[];
   notices: MrNotice[];
+  /** 1C: the picked requests whose read FAILED (refused, unavailable or not known), so the page says so instead of "Reading". Optional: absent means none. */
+  unreadRequests?: readonly string[];
   nextSeq: number;
   /** Deliverable 2, round 9: each Mission's latest owner delete, by its source-qualified ref. */
   deletions: Readonly<Record<string, MrDeletion>>;
@@ -1219,10 +1257,13 @@ export const INITIAL_STATE: MrState = {
   selectedRef: null,
   views: {},
   conversation: EMPTY_CONVERSATION,
+  conversationEpoch: 0,
   composer: '',
+  composerEpoch: 0,
   revising: null,
   typed: '',
   changeReason: '',
+  heldInputs: {},
   rejectArm: null,
   withdrawArm: null,
   pending: [],
@@ -1248,6 +1289,8 @@ export type MrEvent =
   | { type: 'select'; requestRef: string | null }
   | { type: 'revise'; requestRef: string | null }
   | { type: 'newConversation' }
+  /** D1: close the conversation shown and return to a blank start, KEEPING the typed ask as the same input (nothing is sent or cleared). */
+  | { type: 'closeConversation' }
   | { type: 'openConversation'; conversationId: string }
   | { type: 'acknowledge'; requestRef: string }
   | { type: 'dropOffer'; requestRef: string }
@@ -1261,6 +1304,7 @@ export type MrEvent =
       turnId: string | null;
       missionRef?: string | null;
       conversationId?: string | null;
+      text?: string | null;
     }
   | { type: 'reply'; reply: DiMissionRequestReply; nowMs: number };
 
@@ -1438,8 +1482,8 @@ function withView(state: MrState, request: MrRequest, nowMs: number): MrState {
         readAtMs: nowMs,
       },
     },
-    // The typed word belonged to a display that has just been invalidated.
-    typed: stale && !existing.stale && state.selectedRef === request.requestRef ? '' : state.typed,
+    // The typed word belonged to a display that has just been invalidated (D1b: a held word too, when that request is not the one chosen now).
+    ...(stale && !existing.stale ? typedClearedFor(state, request.requestRef) : {}),
   };
 }
 
@@ -1514,8 +1558,55 @@ export function unavailableWords(problem: string, reason: string): string {
  * Round 62: the typed word belongs to the request still chosen, so a clear that one request's answer (or an event
  * naming one request) causes empties it only when that request IS the chosen one; another request's word stays.
  */
-function typedClearedFor(state: MrState, requestRef: string): string {
-  return requestRef === state.selectedRef ? '' : state.typed;
+function typedClearedFor(state: MrState, requestRef: string): Pick<MrState, 'typed' | 'heldInputs'> {
+  if (requestRef === state.selectedRef) return { typed: '', heldInputs: state.heldInputs };
+  // D1b: a request not chosen now keeps its words with it; its word goes too (never its change request's reason)
+  const held = state.heldInputs[requestRef];
+  return { typed: state.typed, heldInputs: held === undefined ? state.heldInputs : withHeld(state.heldInputs, requestRef, { ...held, typed: '' }) };
+}
+
+/** D1b: one request's held words set (or, when nothing is left in them, removed). */
+function withHeld(
+  held: Readonly<Record<string, MrHeldInput>>,
+  requestRef: string,
+  input: MrHeldInput | null,
+): Readonly<Record<string, MrHeldInput>> {
+  const rest = Object.fromEntries(Object.entries(held).filter(([ref]) => ref !== requestRef));
+  return input === null || (input.typed === '' && input.changeReason === '') ? rest : { ...rest, [requestRef]: input };
+}
+
+/**
+ * Choosing a request, or none (`select`'s rule, round 61/62: a different request is a different decision, so neither the typed word, nor a change
+ * request's reason, nor an armed Reject or Withdraw follows it). D1b: the words typed for the request left are not discarded: they are kept WITH that
+ * request and come back only when it is chosen again.
+ */
+function choose(state: MrState, requestRef: string | null): MrState {
+  if (requestRef === state.selectedRef) return state;
+  const leaving = state.selectedRef === null ? undefined : state.views[state.selectedRef];
+  const left =
+    state.selectedRef === null
+      ? state.heldInputs
+      : withHeld(state.heldInputs, state.selectedRef, {
+          typed: state.typed,
+          changeReason: state.changeReason,
+          binding: leaving !== undefined && !leaving.stale ? bindingOf(leaving.displayed) : null,
+        });
+  const back = requestRef === null ? undefined : left[requestRef];
+  // the word comes back only onto the display it was typed for: the same request, Mission, revision and digest, not invalidated since
+  const view = requestRef === null ? undefined : state.views[requestRef];
+  const word =
+    back !== undefined && back.binding !== null && view !== undefined && !view.stale && sameBinding(back.binding, bindingOf(view.displayed))
+      ? back.typed
+      : '';
+  return {
+    ...state,
+    selectedRef: requestRef,
+    typed: word,
+    changeReason: back?.changeReason ?? '',
+    heldInputs: requestRef === null ? left : withHeld(left, requestRef, null),
+    rejectArm: null,
+    withdrawArm: null,
+  };
 }
 
 function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number): MrState {
@@ -1523,6 +1614,12 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
   let next: MrState = { ...state, pending: state.pending.filter((p) => p.seq !== reply.seq) };
   const { op } = reply;
   const answer = reply.answer;
+  // 1C: which picked requests could not be read, so "Reading" is never drawn over a failure (a notice can be dismissed; this cannot)
+  if (op === 'request' && pending?.requestRef) {
+    const ref = pending.requestRef;
+    const others = (next.unreadRequests ?? []).filter((r) => r !== ref);
+    next = { ...next, unreadRequests: reply.state === 'ok' ? others : [...others, ref] };
+  }
 
   if (reply.state === 'unknown') {
     // A write that may have reached the panel and came back with no usable answer: whether it took
@@ -1568,7 +1665,7 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       if (view) {
         next = {
           ...next,
-          typed: typedClearedFor(next, pending.requestRef),
+          ...typedClearedFor(next, pending.requestRef),
           views: { ...next.views, [pending.requestRef]: { ...view, stale: true } },
         };
       }
@@ -1580,7 +1677,7 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       if (view) {
         next = {
           ...next,
-          typed: typedClearedFor(next, pending.requestRef),
+          ...typedClearedFor(next, pending.requestRef),
           views: {
             ...next.views,
             [pending.requestRef]: { ...view, offer: null, offerEpoch: view.offerEpoch + 1 },
@@ -1654,18 +1751,8 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
         if (request) {
           out = withView(out, request, nowMs);
           // Round 62: moving the choice follows `select`'s rule, so nothing typed or armed for the request
-          // chosen before follows it to the new one.
-          const same = request.requestRef === out.selectedRef;
-          out = {
-            ...out,
-            selectedRef: request.requestRef,
-            revising: null,
-            typed: '',
-            changeReason: same ? out.changeReason : '',
-            rejectArm: same ? out.rejectArm : null,
-            withdrawArm: same ? out.withdrawArm : null,
-            tab: 'requests',
-          };
+          // chosen before follows it to the new one (D1b: what was typed for it stays with it).
+          out = { ...choose(out, request.requestRef), revising: null, typed: '', tab: 'requests' };
         } else if (submission && str(submission.state) === 'UNCERTAIN') {
           out = addNotice(
             out,
@@ -1687,8 +1774,8 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       if (request) out = withView(out, request, nowMs);
       // Round 61 sweep: an approval's answer clears the typed word only when it answers the request
       // still chosen; the word in the box belongs to that request, never to another one's answer.
-      if (op === 'decide' && request && request.requestRef === out.selectedRef)
-        out = { ...out, typed: '' };
+      // D1b: an answer for a request chosen before clears the word kept with it, so it never comes back.
+      if (op === 'decide' && request) out = { ...out, ...typedClearedFor(out, request.requestRef) };
       if (
         op === 'withdraw' &&
         request &&
@@ -1701,6 +1788,8 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       // request), and its own armed Reject. Another request's input is left exactly as it is.
       if ((OUTCOME_OPS as readonly string[]).includes(op) && request) {
         if (request.requestRef === out.selectedRef) out = { ...out, typed: '', changeReason: '' };
+        // D1b: and the words kept with it, when it is not the one chosen now
+        else out = { ...out, heldInputs: withHeld(out.heldInputs, request.requestRef, null) };
         if (out.rejectArm !== null && out.rejectArm.requestRef === request.requestRef)
           out = { ...out, rejectArm: null };
       }
@@ -1718,7 +1807,7 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       if (!offerMatchesDisplay(view.displayed, offer)) {
         return {
           ...next,
-          typed: typedClearedFor(next, offer.requestRef),
+          ...typedClearedFor(next, offer.requestRef),
           views: { ...next.views, [offer.requestRef]: { ...view, stale: true } },
         };
       }
@@ -1733,10 +1822,30 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
     case 'turn': {
       const turn = isObject(answer.turn) ? parseTurn(answer.turn) : null;
       if (turn === null) return next;
-      const known = next.conversation.id === turn.conversationId ? next.conversation.turns : [];
+      // D1 (P3): an answer can land after the person moved on. The box is cleared only while it still holds the INPUT this turn sent (its words are
+      // recorded now). IDENTITY is the composer epoch: the box has not been replaced since the send. The text then only confirms the content (the words
+      // sent, or the turn's own when the send recorded none). Words typed since, even the same words typed again, are the person's own and are kept; an
+      // answer with no recorded send of its own never clears the box.
+      const sameInput =
+        pending !== null &&
+        pending.composerEpoch === next.composerEpoch &&
+        next.composer === (pending.text ?? turn.userText);
+      const composer = sameInput ? '' : next.composer;
+      // The turn is drawn only into the conversation still shown, or, for the first turn of a new conversation, while nothing was picked meanwhile.
+      // A conversation the person closed or left is never brought back by a late answer (attributed by what was sent, as a read is).
+      const shown = next.conversation.id;
+      const intoShown = shown === turn.conversationId;
+      // D1 (pre-review 1): only the ORIGINAL blank it was sent from: no conversation opened, closed or started since (the epoch it was sent under holds)
+      const newFromBlank =
+        shown === null &&
+        pending !== null &&
+        (pending.conversationId ?? null) === null &&
+        pending.conversationEpoch === next.conversationEpoch;
+      if (!intoShown && !newFromBlank) return { ...next, composer };
+      const known = intoShown ? next.conversation.turns : [];
       return {
         ...next,
-        composer: '',
+        composer,
         conversation: {
           id: turn.conversationId,
           turns: [...known.filter((t) => t.turnId !== turn.turnId), turn].sort(
@@ -1767,7 +1876,7 @@ export function reduce(state: MrState, event: MrEvent): MrState {
     case 'wide':
       return { ...state, wide: event.on };
     case 'composer':
-      return { ...state, composer: event.text };
+      return { ...state, composer: event.text, composerEpoch: state.composerEpoch + 1 };
     case 'typed':
       return { ...state, typed: event.text };
     case 'changeReason':
@@ -1780,19 +1889,10 @@ export function reduce(state: MrState, event: MrEvent): MrState {
       return { ...state, withdrawArm: event.arm };
     case 'disarmWithdraw':
       return { ...state, withdrawArm: null };
-    case 'select': {
+    case 'select':
       // A different request is a different decision: neither the typed word, nor a change
-      // request's reason, nor an armed Reject or Withdraw follows it.
-      const same = event.requestRef === state.selectedRef;
-      return {
-        ...state,
-        selectedRef: event.requestRef,
-        typed: same ? state.typed : '',
-        changeReason: same ? state.changeReason : '',
-        rejectArm: same ? state.rejectArm : null,
-        withdrawArm: same ? state.withdrawArm : null,
-      };
-    }
+      // request's reason, nor an armed Reject or Withdraw follows it (D1b: the words stay with their own request).
+      return choose(state, event.requestRef);
     case 'revise':
       return {
         ...state,
@@ -1800,11 +1900,23 @@ export function reduce(state: MrState, event: MrEvent): MrState {
         tab: event.requestRef === null ? state.tab : 'ask',
       };
     case 'newConversation':
-      return { ...state, conversation: EMPTY_CONVERSATION, composer: '', revising: null };
+      // the thread's own "Start a new conversation": a new blank, and the box emptied on purpose (a new input)
+      return {
+        ...state,
+        conversation: EMPTY_CONVERSATION,
+        conversationEpoch: state.conversationEpoch + 1,
+        composer: '',
+        composerEpoch: state.composerEpoch + 1,
+        revising: null,
+      };
+    case 'closeConversation':
+      // D1: "Close this conversation": a new blank, and the typed ask kept as the SAME input
+      return { ...state, conversation: EMPTY_CONVERSATION, conversationEpoch: state.conversationEpoch + 1, revising: null };
     case 'openConversation':
       return {
         ...state,
         conversation: { ...EMPTY_CONVERSATION, id: event.conversationId },
+        conversationEpoch: state.conversationEpoch + 1,
         revising: null,
       };
     case 'acknowledge': {
@@ -1812,7 +1924,7 @@ export function reduce(state: MrState, event: MrEvent): MrState {
       if (!view) return state;
       return {
         ...state,
-        typed: typedClearedFor(state, event.requestRef),
+        ...typedClearedFor(state, event.requestRef),
         views: {
           ...state.views,
           [event.requestRef]: {
@@ -1832,7 +1944,7 @@ export function reduce(state: MrState, event: MrEvent): MrState {
       if (!view) return state;
       return {
         ...state,
-        typed: typedClearedFor(state, event.requestRef),
+        ...typedClearedFor(state, event.requestRef),
         views: {
           ...state.views,
           [event.requestRef]: { ...view, offer: null, offerEpoch: view.offerEpoch + 1 },
@@ -1853,6 +1965,12 @@ export function reduce(state: MrState, event: MrEvent): MrState {
             overviewAtMs: null,
             views: {},
             typed: '',
+            // D1b: the decision words kept with other requests go as the chosen one's does (their displays are dropped); change requests' reasons are kept
+            heldInputs: Object.fromEntries(
+              Object.entries(state.heldInputs)
+                .filter(([, held]) => held.changeReason !== '')
+                .map(([ref, held]) => [ref, { typed: '', changeReason: held.changeReason, binding: held.binding }]),
+            ),
             pending: [],
             // a delete still in flight is no longer answered here: whether it happened is not known (never still pending, never done)
             deletions: lostDeletions(state, event.reason),
@@ -1870,6 +1988,9 @@ export function reduce(state: MrState, event: MrEvent): MrState {
             turnId: event.turnId,
             missionRef: event.missionRef ?? null,
             conversationId: event.conversationId ?? null,
+            text: event.text ?? null,
+            conversationEpoch: state.conversationEpoch,
+            composerEpoch: state.composerEpoch,
           },
         ],
         deletions:
@@ -2477,6 +2598,12 @@ export function technicalBlockNote(blocks: number): string {
 
 export const COVERING_WORDS =
   'This window is narrow, so the requests cover the office and its panel. Close the requests to use the world again.';
+/**
+ * B2e R22 (X1): the STATED REASON for the stage controls the docked workspace covers (drawn unavailable and isolated: diCoverIsolation.ts), and their
+ * route. Shown only while the isolation has marked one (diMissionRequest.css reads the mark), so it never disagrees with what is covered.
+ */
+export const COVERS_STAGE_WORDS =
+  'The requests cover part of the page. Close the requests to use it.';
 
 // ---------------------------------------------------------------------------------------------
 // Where a drafted proposal stands (Free UI streamline, review rounds 1 and 2: F5, and REPORT section 6 item 2). ONE reading, and the words every

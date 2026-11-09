@@ -754,8 +754,9 @@
  */
 .di-min-tray {
   position: fixed;
-  top: 0;
+  top: var(--scan-tray-top, 0px);
   bottom: 0;
+  right: var(--scan-tray-dock, 0px);
   z-index: 25;
   display: flex;
   flex-direction: column;

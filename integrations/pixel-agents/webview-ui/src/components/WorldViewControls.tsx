@@ -44,6 +44,8 @@ interface WorldViewControlsProps {
    * from the list. Absent or empty: no such buttons (a world without detected offices).
    */
   offices?: ReadonlyArray<{ label: string; short: string }>;
+  /** B3 routes: the way back to the Mission list without running round the end of the page. Absent: not drawn. */
+  onBackToMissions?: () => void;
 }
 
 /**
@@ -68,6 +70,7 @@ export function WorldViewControls({
   onSelectDistrict,
   districtStatus,
   offices = [],
+  onBackToMissions,
 }: WorldViewControlsProps) {
   const [listOpen, setListOpen] = useState(false);
   return (
@@ -192,6 +195,11 @@ export function WorldViewControls({
               </div>
             ))}
         </nav>
+      )}
+      {onBackToMissions !== undefined && (
+        <button type="button" className="di-jump" data-testid="di-jump-missions" onClick={onBackToMissions}>
+          Back to the Mission list
+        </button>
       )}
       {/* width 0 + min-width 100%: the status never sizes the control column (a long status
           once widened every button over the world); it wraps inside the buttons' width instead */}

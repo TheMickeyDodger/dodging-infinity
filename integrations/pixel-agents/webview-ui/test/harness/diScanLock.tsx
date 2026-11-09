@@ -210,10 +210,13 @@ export function Lock() {
         </div>
       )}
       {/* pass C (C-V1): Home's panel is the PRODUCT's dock width (DI_PANEL_WIDTH_PX), never a proportion of the window: a
-          32.8% aside agreed with the product only at 1280 (295 px at 900, 548 px at 1672) */}
+          32.8% aside agreed with the product only at 1280 (295 px at 900, 548 px at 1672).
+          CHANGED IN B2b (the Lead, 2026-11-05: a specimen that silently differs from production is an instrument out of calibration): the panel is
+          the dock width in EVERY view, as DiOfficePanel draws it. It was '100%' outside Home, which was invisible while a screen covered the whole
+          window, but with two panes it spread Home under the docked screen, so the specimen's captures LOOKED like product defects that were not. */}
       <aside
         className="di-scan"
-        style={{ width: view === 'list' ? `${DI_PANEL_WIDTH_PX}px` : '100%' }}
+        style={{ width: `${DI_PANEL_WIDTH_PX}px` }}
         data-testid="di-office-panel"
       >
         <DiScanPanel

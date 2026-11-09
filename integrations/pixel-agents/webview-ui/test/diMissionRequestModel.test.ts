@@ -50,6 +50,7 @@ import {
   offerMatchesDisplay,
   offerState,
   omittedWords,
+  outcomeRequest,
   parseConversation,
   parseOffer,
   parseOverview,
@@ -623,6 +624,135 @@ describe('a display is frozen; a moved binding invalidates it', () => {
     expect(s.notices[0].text).toMatch(/Nothing was approved/);
   });
 
+  // D1b: putting a picked request back (Escape, or choosing another) never discards what was typed for it, and never shows it for another request.
+  describe('the words typed for a request stay WITH that request', () => {
+    const typedForREF = (): MrState =>
+      apply(stateWithView(), { type: 'typed', text: 'approve' }, { type: 'changeReason', text: 'the scope is too wide' });
+
+    it('put back (no request chosen): nothing typed shows, and choosing it again gives back its words exactly', () => {
+      const away = apply(typedForREF(), { type: 'select', requestRef: null });
+      expect(away.typed).toBe('');
+      expect(away.changeReason).toBe('');
+      const back = apply(away, { type: 'select', requestRef: REF });
+      expect(back.typed).toBe('approve');
+      expect(back.changeReason).toBe('the scope is too wide');
+      expect(back.heldInputs).toEqual({});
+    });
+
+    it('never follows to a different request, and each request gets back only its own words', () => {
+      // REF2 is read first, so a word typed for it is typed against a display (the word box is drawn only with one)
+      const withREF2 = apply(
+        typedForREF(),
+        { type: 'sent', seq: 6, op: 'request', requestRef: REF2, turnId: null },
+        { type: 'reply', nowMs: 2000, reply: reply('request', 6, 'ok', wireRequest({ request_ref: REF2 })) },
+      );
+      const other = apply(withREF2, { type: 'select', requestRef: REF2 });
+      expect(other.typed).toBe('');
+      expect(other.changeReason).toBe('');
+      const otherTyped = apply(other, { type: 'typed', text: 'approve it' });
+      const backToREF = apply(otherTyped, { type: 'select', requestRef: REF });
+      expect(backToREF.typed).toBe('approve');
+      expect(backToREF.changeReason).toBe('the scope is too wide');
+      const backToREF2 = apply(backToREF, { type: 'select', requestRef: REF2 });
+      expect(backToREF2.typed).toBe('approve it');
+      expect(backToREF2.changeReason).toBe('');
+    });
+
+    it('an approval recorded for it while it was put back: its word never comes back (its reason, the person\'s own words, does)', () => {
+      const away = apply(withOffer(typedForREF()), { type: 'sent', seq: 7, op: 'decide', requestRef: REF, turnId: null }, { type: 'select', requestRef: null });
+      const answered = apply(away, { type: 'reply', nowMs: 3000, reply: reply('decide', 7, 'ok', { request: wireRequest() }) });
+      const back = apply(answered, { type: 'select', requestRef: REF });
+      expect(back.typed).toBe('');
+      expect(back.changeReason).toBe('the scope is too wide');
+    });
+
+    it('an outcome recorded for it while it was put back: nothing typed for it comes back', () => {
+      const away = apply(withOffer(typedForREF()), { type: 'sent', seq: 7, op: 'decline', requestRef: REF, turnId: null }, { type: 'select', requestRef: null });
+      const answered = apply(away, { type: 'reply', nowMs: 3000, reply: reply('decline', 7, 'ok', { request: wireRequest() }) });
+      expect(answered.heldInputs).toEqual({});
+      const back = apply(answered, { type: 'select', requestRef: REF });
+      expect(back.typed).toBe('');
+      expect(back.changeReason).toBe('');
+    });
+
+    it('its offer dropped while it was put back: its word does not come back for a different offer; its reason does', () => {
+      const away = apply(withOffer(typedForREF()), { type: 'select', requestRef: null }, { type: 'dropOffer', requestRef: REF });
+      const back = apply(away, { type: 'select', requestRef: REF });
+      expect(back.typed).toBe('');
+      expect(back.changeReason).toBe('the scope is too wide');
+    });
+
+    it('the client stops vouching for the office: the kept decision word goes, as the chosen one does; a kept reason stays', () => {
+      const away = apply(typedForREF(), { type: 'select', requestRef: null }, { type: 'unvouched', reason: 'disconnected' });
+      expect(away.heldInputs).toEqual({ [REF]: { typed: '', changeReason: 'the scope is too wide', binding: bindingOf(typedForREF().views[REF].displayed) } });
+    });
+
+    // Addendum 3, item 3 (identity and revision): a held word is keyed by the request AND the display it was typed for.
+    it('IDENTITY: the held word records the binding (request, Mission, revision, digest) of the display it was typed for', () => {
+      const away = apply(typedForREF(), { type: 'select', requestRef: null });
+      expect(away.heldInputs[REF].binding).toEqual(bindingOf(typedForREF().views[REF].displayed));
+    });
+
+    it('REVISED while held, as the reducer sees it (a read of it shows another revision): the word is cleared and never comes back; the reason does', () => {
+      const away = apply(typedForREF(), { type: 'select', requestRef: REF2 });
+      const revised = apply(
+        away,
+        { type: 'sent', seq: 8, op: 'request', requestRef: REF, turnId: null },
+        { type: 'reply', nowMs: 3000, reply: reply('request', 8, 'ok', wireRequest({ revision: 2, proposal_digest_sha256: DIGEST2 })) },
+      );
+      expect(revised.views[REF].stale).toBe(true);
+      expect(revised.heldInputs[REF]?.typed ?? '').toBe('');
+      const back = apply(revised, { type: 'select', requestRef: REF });
+      expect(back.typed).toBe('');
+      expect(back.changeReason).toBe('the scope is too wide');
+    });
+
+    it('the STRUCTURAL guard: even if the display were swapped by a path that forgot to clear the hold, a word held for revision 1 never re-attaches to revision 2', () => {
+      const away = apply(typedForREF(), { type: 'select', requestRef: null });
+      const view = away.views[REF];
+      const swapped: MrState = { ...away, views: { ...away.views, [REF]: { ...view, displayed: { ...view.displayed, revision: view.displayed.revision + 1 } } } };
+      expect(swapped.heldInputs[REF].typed).toBe('approve');
+      const back = apply(swapped, { type: 'select', requestRef: REF });
+      expect(back.typed).toBe('');
+      expect(back.changeReason).toBe('the scope is too wide');
+    });
+
+    it('the same display re-read unchanged while held (an ordinary poll): the word comes back exactly', () => {
+      const away = apply(typedForREF(), { type: 'select', requestRef: REF2 });
+      const polled = apply(
+        away,
+        { type: 'sent', seq: 9, op: 'request', requestRef: REF, turnId: null },
+        { type: 'reply', nowMs: 3000, reply: reply('request', 9, 'ok', wireRequest()) },
+      );
+      expect(polled.views[REF].stale).toBe(false);
+      expect(apply(polled, { type: 'select', requestRef: REF }).typed).toBe('approve');
+    });
+
+    it('NO TRANSFER (reducer): a word and reason held for REF are neither shown for REF2 nor usable to decide or ask for changes on it', () => {
+      // Pre-review finding 4: REF2 is DISPLAYED, with its own valid offer, so a null outcome below is the guard (nothing was carried over), never REF2
+      // simply having no view to act on.
+      const onREF2 = apply(
+        stateWithView(),
+        { type: 'typed', text: 'approve' },
+        { type: 'changeReason', text: 'the scope is too wide' },
+        { type: 'select', requestRef: REF2 },
+        { type: 'sent', seq: 6, op: 'request', requestRef: REF2, turnId: null },
+        { type: 'reply', nowMs: 2000, reply: reply('request', 6, 'ok', wireRequest({ request_ref: REF2 })) },
+        { type: 'sent', seq: 7, op: 'offer', requestRef: REF2, turnId: null },
+        { type: 'reply', nowMs: 2100, reply: reply('offer', 7, 'ok', wireOffer({ request_ref: REF2 })) },
+      );
+      expect(onREF2.selectedRef).toBe(REF2);
+      expect(onREF2.views[REF2]?.offer, 'REF2 is displayed with its own offer').toBeTruthy();
+      expect(onREF2.typed).toBe('');
+      expect(onREF2.changeReason).toBe('');
+      expect(isDecisionWord(onREF2.typed)).toBe(false);
+      expect(outcomeRequest(onREF2, 'requestChanges', 1500)).toBeNull();
+      // the positive control: a reason typed FOR REF2 makes asking for changes on REF2 available, so the null above is the guard and not a missing view
+      expect(outcomeRequest(apply(onREF2, { type: 'changeReason', text: 'REF2 needs a narrower scope' }), 'requestChanges', 1500)).not.toBeNull();
+      expect(onREF2.heldInputs[REF]).toMatchObject({ typed: 'approve', changeReason: 'the scope is too wide' });
+    });
+  });
+
   it('selecting another request drops the typed word: a decision does not follow the person', () => {
     const s = apply(
       stateWithView(),
@@ -1098,6 +1228,134 @@ describe('asking is held until the answer; an unknown outcome is shown as unknow
       },
     );
     expect(s.conversation.id).toBe(`cv-${'1'.repeat(32)}`);
+  });
+
+  // D1 (P3): a turn's answer is attributed to the conversation it was SENT INTO, as a read is. It lands late when the person has already left that conversation
+  // (closed it, or picked another); it must not bring the left one back, and it must not wipe words typed since. The box is cleared only while it still holds
+  // exactly the words that turn sent: those were recorded, so they are never left to be sent twice.
+  describe('a turn answered after the person moved on', () => {
+    const X = `cv-${'1'.repeat(32)}`;
+    const Y = `cv-${'2'.repeat(32)}`;
+    const wireTurn = (conversationId: string, userText: string) => ({
+      turn: {
+        turn_id: `ct-${'1'.repeat(32)}`,
+        conversation_id: conversationId,
+        sequence: 1,
+        state: 'RESERVED',
+        in_flight: true,
+        user_text: userText,
+        assistant_text: null,
+        outcome: null,
+        draft: null,
+        draft_problem: null,
+        submission: null,
+      },
+    });
+    const sentIntoX = (): MrState =>
+      apply(
+        INITIAL_STATE,
+        { type: 'openConversation', conversationId: X },
+        { type: 'composer', text: 'M1' },
+        { type: 'sent', seq: 1, op: 'turn', requestRef: null, turnId: null, conversationId: X, text: 'M1' },
+      );
+    const answered = (s: MrState): MrState => apply(s, { type: 'reply', nowMs: 1, reply: reply('turn', 1, 'ok', wireTurn(X, 'M1')) });
+
+    it('closed (closeConversation, the ask kept as the same input) and a newer draft typed: the closed conversation stays closed and the newer draft is kept', () => {
+      const s = answered(apply(sentIntoX(), { type: 'closeConversation' }, { type: 'composer', text: 'M2 newer draft' }));
+      expect(s.conversation.id).toBeNull();
+      expect(s.conversation.turns).toEqual([]);
+      expect(s.composer).toBe('M2 newer draft');
+    });
+
+    it('closed with the sent words still in the box (closeConversation, the same input): the conversation stays closed and the box no longer holds the words that were recorded', () => {
+      const s = answered(apply(sentIntoX(), { type: 'closeConversation' }));
+      expect(s.conversation.id).toBeNull();
+      expect(s.composer).toBe('');
+    });
+
+    it('another conversation picked meanwhile: that one stays shown, and a newer draft is kept', () => {
+      const s = answered(apply(sentIntoX(), { type: 'openConversation', conversationId: Y }, { type: 'composer', text: 'M2 for Y' }));
+      expect(s.conversation.id).toBe(Y);
+      expect(s.conversation.turns).toEqual([]);
+      expect(s.composer).toBe('M2 for Y');
+    });
+
+    it('still on the conversation it was sent into, with a newer draft typed while it was answered: the turn joins it and the newer draft is kept', () => {
+      const s = answered(apply(sentIntoX(), { type: 'composer', text: 'M2 typed while waiting' }));
+      expect(s.conversation.id).toBe(X);
+      expect(s.conversation.turns.map((t) => t.userText)).toEqual(['M1']);
+      expect(s.composer).toBe('M2 typed while waiting');
+    });
+
+    it('still on that conversation and the box unchanged: as before, the turn joins it and the box is cleared', () => {
+      const s = answered(sentIntoX());
+      expect(s.conversation.id).toBe(X);
+      expect(s.composer).toBe('');
+    });
+
+    it('the first turn of a NEW conversation, sent from a blank start that is still blank: it becomes the conversation shown, as before', () => {
+      const s = apply(
+        INITIAL_STATE,
+        { type: 'composer', text: 'M1' },
+        { type: 'sent', seq: 1, op: 'turn', requestRef: null, turnId: null, conversationId: null, text: 'M1' },
+        { type: 'reply', nowMs: 1, reply: reply('turn', 1, 'ok', wireTurn(X, 'M1')) },
+      );
+      expect(s.conversation.id).toBe(X);
+      expect(s.composer).toBe('');
+    });
+
+    it('the first turn of a new conversation, and the person picked a Recent conversation meanwhile: the pick stays shown', () => {
+      const s = apply(
+        INITIAL_STATE,
+        { type: 'composer', text: 'M1' },
+        { type: 'sent', seq: 1, op: 'turn', requestRef: null, turnId: null, conversationId: null, text: 'M1' },
+        { type: 'openConversation', conversationId: Y },
+        { type: 'reply', nowMs: 1, reply: reply('turn', 1, 'ok', wireTurn(X, 'M1')) },
+      );
+      expect(s.conversation.id).toBe(Y);
+    });
+
+    // D1 correction (reviewer1 pre-review, finding 1): a blank-start answer is adopted only into the ORIGINAL blank it was sent from. A blank reached
+    // LATER (a Recent conversation picked and closed, or a reset) is the person's new place, and a late answer must not fill it.
+    const sentFromBlank = (): MrState =>
+      apply(
+        INITIAL_STATE,
+        { type: 'composer', text: 'M1' },
+        { type: 'sent', seq: 1, op: 'turn', requestRef: null, turnId: null, conversationId: null, text: 'M1' },
+      );
+
+    it('REPRO (pre-review 1): sent from blank, Recent Y picked, Y closed by the old two-event close, then answered: that LATER blank stays blank', () => {
+      const s = answered(apply(sentFromBlank(), { type: 'openConversation', conversationId: Y }, { type: 'newConversation' }, { type: 'composer', text: 'M1' }));
+      expect(s.conversation.id).toBeNull();
+      expect(s.conversation.turns).toEqual([]);
+    });
+
+    it('REPRO through the close the UI uses (closeConversation keeps the ask as the SAME input): the later blank stays blank, and the recorded words leave the box', () => {
+      const s = answered(apply(sentFromBlank(), { type: 'openConversation', conversationId: Y }, { type: 'closeConversation' }));
+      expect(s.conversation.id).toBeNull();
+      expect(s.conversation.turns).toEqual([]);
+      expect(s.composer).toBe('');
+    });
+
+    it('sent from blank, then "Start a new conversation" while still blank (a later reset, not the original blank): the answer is not adopted', () => {
+      const s = answered(apply(sentFromBlank(), { type: 'newConversation' }));
+      expect(s.conversation.id).toBeNull();
+      expect(s.conversation.turns).toEqual([]);
+    });
+
+    // The Lead's ownership rule: text equality is not proof that the box holds the input that was sent.
+    it('OWNERSHIP: a newer draft with the SAME text is not the sent input: the turn joins X and the retyped words stay in the box', () => {
+      const s = answered(apply(sentIntoX(), { type: 'composer', text: 'M' }, { type: 'composer', text: 'M1' }));
+      expect(s.conversation.id).toBe(X);
+      expect(s.conversation.turns.map((t) => t.userText)).toEqual(['M1']);
+      expect(s.composer).toBe('M1');
+    });
+
+    it('OWNERSHIP after a reset: the box emptied by "Start a new conversation" and the same words typed again are a new draft, and they are kept', () => {
+      const s = answered(apply(sentIntoX(), { type: 'newConversation' }, { type: 'composer', text: 'M1' }));
+      expect(s.conversation.id).toBeNull();
+      expect(s.composer).toBe('M1');
+    });
   });
 
   it('a submitted proposal selects the new request and ends the revision', () => {

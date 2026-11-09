@@ -46,6 +46,19 @@ const render = (row: DiScanRow, view: DiScanView = 'mission') =>
       onOpenSettings: noop,
     }),
   );
+/** B2c: the same, with "More actions" open (a closed popover's items are not in the markup; DiScanPanelProps.initialMoreActionsOpen). */
+const renderOpen = (row: DiScanRow, view: DiScanView = 'mission') =>
+  renderToStaticMarkup(
+    createElement(DiScanPanel, {
+      rows: [row],
+      initialSelectedId: row.id,
+      initialView: view,
+      initialMoreActionsOpen: true,
+      onMinimize: noop,
+      onOpenRequestWorkspace: noop,
+      onOpenSettings: noop,
+    }),
+  );
 const [building, merged, failedCi] = [DI_SCAN_LOCK[0]!, DI_SCAN_LOCK[1]!, DI_SCAN_LOCK[2]!];
 
 /** Opening tag of the first element carrying `testid`. */
@@ -67,11 +80,24 @@ const position = (html: string, testid: string) => {
   if (at < 0) throw new Error(`no ${testid}`);
   return at;
 };
+/**
+ * B2a (Direction B): Home, the Mission list, stays mounted beside every screen and carries some of the same ids (a row's pills). An assertion about the
+ * stage looks at the stage's own markup. CHANGED IN B2b: Home comes AFTER the screens in the document (Tab follows the window's order, rail | screen |
+ * list), so the stage's markup ends where Home's begins. Scoping changes WHERE an assertion looks, never WHAT it expects.
+ */
+const stageOf = (html: string) => {
+  const at = position(html, 'di-scan-stage');
+  const home = html.indexOf('data-testid="di-scan-home"', at);
+  return html.slice(at, home < 0 ? undefined : home);
+};
 const LAYOUT_NOTE = 'Layout preview. These controls are drawn but not connected yet.';
 
 describe('PRESENTATION: the pixel-lock composition, in order (pixel-lock/02-mission-details.png, D-2)', () => {
-  it('Back and breadcrumb, title, status pills, details card, Swarm, Delivery, state actions, the three buttons, trash last', () => {
-    const html = render(building);
+  // CHANGED IN B2a (scoping only): the order is read in the stage, since Home (mounted beside it, first in the markup) has its own pills
+  // CHANGED IN B2c: Herdr and Comments (and Evidence and review) moved into "More actions", the one secondary beside Code Diff; the popover's own order,
+  // trigger first and Close last, before the trash, is pinned on the open render below. BEFORE: "..., state actions, the three buttons, trash last".
+  it('Back and breadcrumb, title, status pills, details card, Swarm, Delivery, state actions, Code Diff and More actions, trash last', () => {
+    const html = stageOf(render(building));
     const order = [
       'di-scan-back',
       'di-scan-crumb',
@@ -82,28 +108,46 @@ describe('PRESENTATION: the pixel-lock composition, in order (pixel-lock/02-miss
       'di-scan-delivery',
       'di-scan-state-actions',
       'di-scan-code-diff',
-      'di-scan-herdr',
-      'di-scan-comments',
+      'di-scan-more-actions',
       'di-scan-trash',
     ].map((id) => [id, position(html, id)] as const);
     const sorted = [...order].sort((a, b) => a[1] - b[1]).map(([id]) => id);
     expect(sorted).toEqual(order.map(([id]) => id));
+    // the seam is initial state only (the Lead's condition): with initialMoreActionsOpen unset, the product's own render draws NO popover and the trigger
+    // says it is closed, exactly as without the prop
+    expect(html).not.toContain('data-testid="di-scan-more-actions-popover"');
+    expect(tag(html, 'di-scan-more-actions')).toContain('aria-expanded="false"');
+    // open: the popover sits right after its trigger, its items in order, its Close last, all before the trash
+    const open = stageOf(renderOpen(building));
+    const inPopover = ['di-scan-more-actions', 'di-scan-more-actions-popover', 'di-scan-comments', 'di-scan-evidence', 'di-scan-herdr', 'di-scan-more-actions-close', 'di-scan-trash'].map(
+      (id) => [id, position(open, id)] as const,
+    );
+    expect([...inPopover].sort((a, b) => a[1] - b[1]).map(([id]) => id)).toEqual(inPopover.map(([id]) => id));
   });
   it("the stage starts at the rail's edge, so the rail stays beside it", () => {
     expect(tag(render(building), 'di-scan-stage')).toContain(`left:${DI_RAIL_WIDTH_PX}px`);
   });
-  it('the three buttons read Code Diff, Herdr and Comments, in plain title case (no pixel display labels)', () => {
+  // CHANGED IN B2c: Herdr and Comments are items of "More actions" now (read on the open render), and the trigger is pinned too. BEFORE: "the three buttons
+  // read Code Diff, Herdr and Comments". Every label is still pinned in plain title case.
+  it('Code Diff and More actions, and the items Comments, Evidence and review and Herdr, read in plain title case (no pixel display labels)', () => {
     const html = render(building);
     for (const [id, label] of [
       ['di-scan-code-diff', 'Code Diff'],
-      ['di-scan-herdr', 'Herdr'],
-      ['di-scan-comments', 'Comments'],
+      ['di-scan-more-actions', 'More actions'],
     ] as const)
       expect(block(html, id)).toMatch(new RegExp(`>${label}</button>$`));
+    const open = renderOpen(building);
+    for (const [id, label] of [
+      ['di-scan-comments', 'Comments'],
+      ['di-scan-evidence', 'Evidence and review'],
+      ['di-scan-herdr', 'Herdr'],
+    ] as const)
+      expect(block(open, id)).toMatch(new RegExp(`>${label}</button>$`));
   });
+  // CHANGED IN B2a (scoping only): the stage's own pills; Home's row pills are a separate surface
   it('status pills are a dot AND a word (AC-UX-10)', () => {
     const pills = [
-      ...render(building).matchAll(
+      ...stageOf(render(building)).matchAll(
         /data-testid="di-scan-pill"[^>]*>([\s\S]*?)<\/span>(?=<span class="di-scan-pill"|<\/span>)/g,
       ),
     ].map((m) => m[1]);
@@ -257,9 +301,10 @@ describe('PRESENTATION: the trash (D-1, AC-4.4-29/-30/-32), disabled at this sta
   // Mission data AND the herd tools' own terminal history and transcripts, so the pass A words "local data" understated
   // it. The copy must be true at that full scope, keep the summary and approval-record promise, and never promise a
   // whole delete it cannot report per owner.
-  it('sits bottom-right, after the three buttons, and says what is deleted and what is kept', () => {
+  // CHANGED IN B2c: the trash follows "More actions" (Comments is inside it). BEFORE: "after the three buttons", read after Comments.
+  it('sits bottom-right, after More actions, and says what is deleted and what is kept', () => {
     const html = render(merged);
-    expect(position(html, 'di-scan-trash')).toBeGreaterThan(position(html, 'di-scan-comments'));
+    expect(position(html, 'di-scan-trash')).toBeGreaterThan(position(html, 'di-scan-more-actions'));
     expect(tag(html, 'di-scan-trash')).toContain('aria-label="Hold to delete this Mission’s local data"');
     expect(html).toContain(TRASH_SCOPE);
   });
@@ -291,7 +336,10 @@ describe('PRESENTATION: the trash (D-1, AC-4.4-29/-30/-32), disabled at this sta
     expect(block(html, 'di-scan-trash-reason')).toContain('This Mission’s local data is not read here.');
     expect(html).not.toMatch(/aria-label="Clear /);
   });
-  it('the Home expanded card has the same disabled trash, bottom-right, and no hide gesture', () => {
+  // CHANGED IN B2a (Direction B, Q8 = (a), the Lead 2026-11-05): one click docks a Mission, so Home's inline expanded card is removed, and its disabled Trash
+  // with it. This test pinned that card's Trash (disabled, after the meta line, no hide gesture). Its subject is gone. What stays pinned: Home offers NO Trash
+  // and still no hide gesture; the one Trash is Mission details' own (last in the composition above).
+  it('B2a: Home has no expanded card and no Trash (the one Trash is in Mission details), and still no hide gesture', () => {
     const html = renderToStaticMarkup(
       createElement(DiScanPanel, {
         rows: DI_SCAN_LOCK,
@@ -299,13 +347,10 @@ describe('PRESENTATION: the trash (D-1, AC-4.4-29/-30/-32), disabled at this sta
         onMinimize: noop,
       }),
     );
-    const card = block(html, 'di-scan-detail');
-    const foot = /class="di-scan-detail-foot"[\s\S]*$/.exec(card)![0];
-    expect(foot.indexOf('data-testid="di-scan-meta"')).toBeLessThan(
-      foot.indexOf('data-testid="di-scan-trash"'),
-    );
-    expect(tag(card, 'di-scan-trash')).toContain('disabled=""');
-    expect(card).not.toMatch(/aria-label="Clear /);
+    expect(html).toContain('data-testid="di-scan-row"');
+    expect(html).not.toContain('data-testid="di-scan-detail"');
+    expect(html).not.toContain('data-testid="di-scan-trash"');
+    expect(html).not.toMatch(/aria-label="Clear /);
   });
 });
 
@@ -318,16 +363,21 @@ describe('A4: no in-app Herdr terminal remains (GAP-RESOLUTIONS 9, 11, 13; super
         rows: [building],
         initialSelectedId: building.id,
         initialView: 'mission' as DiScanView,
+        // B2c: the Herdr control is an item of "More actions"; its state is read on the open render
+        initialMoreActionsOpen: true,
         onMinimize: noop,
         herdr: herdrControl(building.id, options),
       }),
     );
 
-  it('the Herdr button keeps its place and opens no nested screen; with no control wired it is disabled and says nothing is connected', () => {
-    const html = render(building);
+  // CHANGED IN B2c: the Herdr control is an ITEM of "More actions" (the Lead's ruling (i): its status line stays in the notes row). Held, it is aria-disabled and
+  // stays focusable, its reason drawn IN the item and describing it (BEFORE: a native disabled button described by the notes-row line). The line is unchanged.
+  it('the Herdr item opens no nested screen; with no control wired it is held, its reason in the item, and the line says nothing is connected', () => {
+    const html = renderOpen(building);
     const herdr = tag(html, 'di-scan-herdr');
-    expect(herdr).toContain('disabled=""');
-    expect(herdr).toContain('aria-describedby="di-scan-herdr-reason"');
+    expect(herdr).toContain('aria-disabled="true"');
+    expect(herdr).toContain('aria-describedby="di-scan-herdr-held"');
+    expect(block(html, 'di-scan-herdr-held')).toContain('The Herdr control is not connected to this view, so nothing can be opened from here.');
     expect(block(html, 'di-scan-herdr-reason')).toContain('The Herdr control is not connected to this view, so nothing can be opened from here.');
     expect(html).not.toMatch(/herdctl|does not start it|Herdr runs in your own terminal/);
   });
@@ -357,11 +407,14 @@ describe('A4: no in-app Herdr terminal remains (GAP-RESOLUTIONS 9, 11, 13; super
   });
   // CHANGED IN the Free UI streamline (2026-11-04, approved Mission mn-92b246d…, A7): the default line is SHORT and says only what the office said (here its own first
   // statement, "Herdr is not set up in this office"); the office's reason, flags and paths included, is kept VERBATIM one disclosure away and still describes the button.
-  it('where the office refused, it is disabled; the line says so in short, the office\'s own reason is kept verbatim on demand, with a way to ask again', () => {
+  // CHANGED IN B2c: held (aria-disabled) rather than natively disabled, described by its reason in the item and the full words (BEFORE: by the notes-row line and
+  // the full words). The line, the verbatim reason and Check again are unchanged and stay in the notes row.
+  it('where the office refused, it is held; the line says so in short, the office\'s own reason is kept verbatim on demand, with a way to ask again', () => {
     const reason = 'Herdr is not set up in this office: it was started without --herdr-bin, --herdr-home, --herdr-socket. Nothing was attempted.';
     const html = withControl({ check: { kind: 'unavailable', problem: 'herdr_not_configured', reason } });
-    expect(tag(html, 'di-scan-herdr')).toContain('disabled=""');
-    expect(tag(html, 'di-scan-herdr')).toContain('aria-describedby="di-scan-herdr-reason di-scan-herdr-desc"');
+    expect(tag(html, 'di-scan-herdr')).toContain('aria-disabled="true"');
+    expect(tag(html, 'di-scan-herdr')).toContain('aria-describedby="di-scan-herdr-held di-scan-herdr-desc"');
+    expect(block(html, 'di-scan-herdr-held')).toContain('Herdr is not set up in this office.');
     const line = block(html, 'di-scan-herdr-reason');
     expect(line).toMatch(/>Herdr is not set up in this office\. <button/);
     expect(line).not.toContain('--herdr');
@@ -395,9 +448,10 @@ describe('A4: no in-app Herdr terminal remains (GAP-RESOLUTIONS 9, 11, 13; super
     expect(html).toMatch(/data-testid="di-scan-herdr-more"><summary[^>]*>The office’s answer about Herdr<\/summary>/);
     expect(block(html, 'di-scan-herdr-note')).toContain(`>${reason}</p>`);
   });
-  it('before the office has answered it is disabled and says it has not been checked; while it is being asked it says so and is busy', () => {
+  // CHANGED IN B2c: held (aria-disabled) rather than natively disabled; busy as before
+  it('before the office has answered it is held and says it has not been checked; while it is being asked it says so and is busy', () => {
     const unknown = withControl({ check: { kind: 'unknown' } });
-    expect(tag(unknown, 'di-scan-herdr')).toContain('disabled=""');
+    expect(tag(unknown, 'di-scan-herdr')).toContain('aria-disabled="true"');
     expect(block(unknown, 'di-scan-herdr-reason')).toContain('has not been checked yet');
     const checking = withControl({ check: { kind: 'checking' } });
     expect(tag(checking, 'di-scan-herdr')).toContain('aria-busy="true"');
@@ -419,10 +473,12 @@ describe('A4: no in-app Herdr terminal remains (GAP-RESOLUTIONS 9, 11, 13; super
     expect(block(refused, 'di-scan-herdr-note')).toContain('Nothing was opened: Workspace focus was not established');
     expect(tag(refused, 'di-scan-herdr')).not.toContain('disabled');
   });
-  it('the markup is wired to the click: the enabled button is the only one that can launch, and a disabled one carries the disabled attribute', () => {
+  // CHANGED IN B2c: a held item is aria-disabled (and stays focusable); static markup cannot show a click handler, so "a held item's click sends nothing" is
+  // proven RENDERED in diScanB2cMoreActionsBrowser.test.ts. BEFORE: "a disabled one carries the disabled attribute".
+  it('the markup marks what can launch: the enabled item is the only one not held, and a held one is aria-disabled', () => {
     expect(tag(withControl(), 'di-scan-herdr')).not.toContain('disabled');
-    expect(tag(withControl({ check: { kind: 'unavailable', problem: 'not_live', reason: 'x' } }), 'di-scan-herdr')).toContain('disabled=""');
-    expect(tag(withControl({ launch: { kind: 'launching' } }), 'di-scan-herdr')).toContain('disabled=""');
+    expect(tag(withControl({ check: { kind: 'unavailable', problem: 'not_live', reason: 'x' } }), 'di-scan-herdr')).toContain('aria-disabled="true"');
+    expect(tag(withControl({ launch: { kind: 'launching' } }), 'di-scan-herdr')).toContain('aria-disabled="true"');
   });
   it('no view renders a pane grid, a prompt or terminal chrome', () => {
     for (const view of ['list', 'mission', 'diff', 'comments'] as const) {
@@ -527,77 +583,76 @@ describe('an unfinished deletion is never said as done, drawn or spoken: every c
       expect(folded).toBe(TRASH_SCOPE);
     }
   });
-  it('Home\'s expanded card: its spoken trash description follows the same rule', () => {
-    const state = structuredClone(abandoned);
-    const mission = state.missions.missions.find((m) => m.missionRef === REF)!;
-    mission.retention = { ...mission.retention!, phase: 'deleting', phaseAt: 100, summary: null };
-    // Home lists the Mission (under Open here, so its expanded card is drawn) with the retention reading that says its deletion is not finished
-    const list = renderToStaticMarkup(createElement(DiScanPanel, { rows: scanRowsFromOffice(state).map((r) => ({ ...r, tab: 'open' as const })), initialSelectedId: REF, onMinimize: noop }));
-    const spoken = /id="di-scan-detail-trash-reason">([^<]*)<\/span>/.exec(list)?.[1] ?? '';
-    expect(spoken).toMatch(/^A deletion of this Mission is not finished\./);
-    expect(spoken).not.toMatch(DONE_CLAIM);
-  });
-  // Review round 1, F3: Home read no delete result (it passed none), so this window's own delete, in flight or accepted and still finishing, was said as done there
-  // until the retention reading caught up. Home now reads this Mission's own latest delete, by its source-qualified ref, as Mission details does.
+  // CHANGED IN B2a (Direction B, Q8 = (a)): Home's inline expanded card is removed, and with it Home's copy of the Trash scope. The tests here pinned that
+  // copy's TENSE (review round 1, F3: Home read this Mission's own delete, by its source-qualified ref) and its REASON by whether the office has a delete route
+  // (review round 2, REPORT section 6 item 1). Their subject is gone: in every one of those states Home now draws and speaks NO Trash copy, so it cannot say one
+  // in the wrong tense, and the whole-screen guard those tests carried (nothing on Home says it was deleted while a deletion is unfinished) is kept exactly.
+  // Mission details' copies follow the rule above, its own in-flight and pending cases included.
   const OTHER_REF = 'synthetic_mission_core:mn-00000000000000000000000000000002';
-  const home = (deleteResults?: Record<string, MrDeletion>) =>
+  const listed = (state: DiOfficeState) => scanRowsFromOffice(state).map((r) => ({ ...r, tab: 'open' as const }));
+  const home = (deleteResults?: Record<string, MrDeletion>, withRoute = false) =>
     renderToStaticMarkup(
       createElement(DiScanPanel, {
-        rows: scanRowsFromOffice(structuredClone(abandoned)).map((r) => ({ ...r, tab: 'open' as const })),
+        rows: listed(structuredClone(abandoned)),
         initialSelectedId: REF,
         onMinimize: noop,
+        ...(withRoute ? { onDeleteLocalData: noop } : {}),
         ...(deleteResults ? { deleteResults } : {}),
       }),
     );
-  const homeSpoken = (html: string) => /id="di-scan-detail-trash-reason">([^<]*)<\/span>/.exec(html)?.[1] ?? '';
-  // Home's spoken Trash description is the scope FOLLOWED BY why Home's Trash cannot act (DiScanPanel, unchanged in that respect since baseline). These renders
-  // pass no delete route (no request panel to delete through) and the Mission's own gate is open, so that reason is the product's TRASH_NOT_CONNECTED, exactly:
+  const homeDeleting = () => {
+    const state = structuredClone(abandoned);
+    const mission = state.missions.missions.find((m) => m.missionRef === REF)!;
+    mission.retention = { ...mission.retention!, phase: 'deleting', phaseAt: 100, summary: null };
+    return renderToStaticMarkup(createElement(DiScanPanel, { rows: listed(state), initialSelectedId: REF, onMinimize: noop }));
+  };
+  // the sentences Home's Trash used to end with: why it could not act there, and where deleting is done
   const NOT_CONNECTED = 'This office has no request panel to delete through, so nothing can be deleted here.';
-  for (const [name, deletion] of [
-    ['in flight (sent, its answer not back)', { state: 'in_flight', text: 'Deleting: waiting.', problem: null }],
-    ['pending (accepted, still finishing)', { state: 'pending', text: 'Accepted, still finishing.', problem: null }],
-  ] as const)
-    it(`Home's expanded card, this window's own delete ${name}, BEFORE the retention reading says deleting: neither the spoken nor the drawn text says it was deleted`, () => {
-      const html = home({ [REF]: deletion });
-      expect(homeSpoken(html)).toMatch(/^A deletion of this Mission is not finished\./);
-      expect(homeSpoken(html).endsWith(` ${NOT_CONNECTED}`), 'and it still says why nothing can be deleted here').toBe(true);
-      // spoken and drawn: the whole Home screen's words, with the hidden copy included
-      expect(markupText(html, ' ')).not.toMatch(DONE_CLAIM);
-    });
-  // CHANGED after logs/81 (a wrong expectation in this test, not a product defect): it compared the whole spoken copy with the scope alone, but Home's copy is the
-  // scope and then the reason Home's Trash cannot act. The countercase is about the TENSE: a finished delete, a different Mission's delete, and none leave
-  // this Mission's scope in the finished wording. Its expectation now carries the no-panel reason too, which stays asserted.
-  it('Home, countercases: a finished delete, and a delete of a DIFFERENT Mission, leave this Mission\'s scope as before (followed by why nothing can be deleted here)', () => {
-    expect(homeSpoken(home({ [REF]: { state: 'completed', text: 'Deleted.', problem: null } }))).toBe(`${TRASH_SCOPE} ${NOT_CONNECTED}`);
-    expect(homeSpoken(home({ [OTHER_REF]: { state: 'in_flight', text: 'Deleting: waiting.', problem: null } }))).toBe(`${TRASH_SCOPE} ${NOT_CONNECTED}`);
-    expect(homeSpoken(home())).toBe(`${TRASH_SCOPE} ${NOT_CONNECTED}`);
-  });
-  // Review round 2, REPORT section 6 item 1: Home's Trash reason by whether the office HAS a delete route. At HEAD it said "This office has no request panel to
-  // delete through" whenever the gate was open, also where the office has one (provenance-round3-items-1-2.txt). Home's Trash still never deletes; the title
-  // and the spoken note now give the SAME reason, true for each state.
   const ON_DETAILS = 'Deleting is done from this Mission’s details, not from here: open it, then hold its Trash.';
-  const homeTitle = (html: string) => /<button[^>]*data-testid="di-scan-trash"[^>]*>/.exec(html)?.[0].match(/title="([^"]*)"/)?.[1] ?? '';
-  const homeWithRoute = () =>
-    renderToStaticMarkup(
-      createElement(DiScanPanel, {
-        rows: scanRowsFromOffice(structuredClone(abandoned)).map((r) => ({ ...r, tab: 'open' as const })),
-        initialSelectedId: REF,
-        onMinimize: noop,
-        onDeleteLocalData: noop,
-      }),
-    );
-  it('Home, an office WITH a delete route: its Trash says deleting is done from the Mission\'s details, never that there is no request panel; title and note agree', () => {
-    const html = homeWithRoute();
-    expect(homeSpoken(html)).toBe(`${TRASH_SCOPE} ${ON_DETAILS}`);
-    expect(homeTitle(html)).toBe(`Hold to delete this Mission’s local data. ${ON_DETAILS}`);
-    expect(html).not.toContain(NOT_CONNECTED);
-    // still not a control that deletes: Home's Trash is drawn disabled
-    expect(/<button[^>]*data-testid="di-scan-trash"[^>]*>/.exec(html)?.[0]).toMatch(/\bdisabled=""/);
-  });
-  it('Home, an office with NO delete route: the no-panel sentence, in the title and in the note alike', () => {
-    const html = home();
-    expect(homeSpoken(html).endsWith(` ${NOT_CONNECTED}`)).toBe(true);
-    expect(homeTitle(html)).toBe(`Hold to delete this Mission’s local data. ${NOT_CONNECTED}`);
-    expect(html).not.toContain(ON_DETAILS);
+  for (const [name, html, unfinished] of [
+    ['its deletion started and is retried (the retention reading says deleting)', homeDeleting, true],
+    ["this window's own delete in flight, BEFORE the retention reading says deleting", () => home({ [REF]: { state: 'in_flight', text: 'Deleting: waiting.', problem: null } }), true],
+    ["this window's own delete pending (accepted, still finishing), BEFORE the retention reading says deleting", () => home({ [REF]: { state: 'pending', text: 'Accepted, still finishing.', problem: null } }), true],
+    ['a finished delete', () => home({ [REF]: { state: 'completed', text: 'Deleted.', problem: null } }), false],
+    ['a delete of a DIFFERENT Mission', () => home({ [OTHER_REF]: { state: 'in_flight', text: 'Deleting: waiting.', problem: null } }), false],
+    ['no delete, an office with NO delete route', () => home(), false],
+    ['no delete, an office WITH a delete route', () => home(undefined, true), false],
+  ] as const)
+    it(`B2a, Home, ${name}: the Mission is listed and NO Trash copy is drawn or spoken${unfinished ? '; nothing on the whole Home screen says it was deleted' : ''}`, () => {
+      const markup = html();
+      expect(markup).toContain(`data-mission-ref="${REF}"`);
+      expect(markup).not.toContain('data-testid="di-scan-trash"');
+      expect(markup).not.toContain('di-scan-detail-trash-reason');
+      expect(markup).not.toContain(TRASH_SCOPE);
+      expect(markup).not.toContain(NOT_CONNECTED);
+      expect(markup).not.toContain(ON_DETAILS);
+      if (unfinished) expect(markupText(markup, ' ')).not.toMatch(DONE_CLAIM);
+    });
+});
+
+// B2a (Direction B, Q8 = (a), condition 1, the Lead 2026-11-05): Home's inline expanded card is removed, and NOTHING it showed may be lost. Each thing the card
+// drew (title, pills, description, the unresolved runtime records, every swarm member with role, name and identity label, the meta line, the Trash) is in the
+// docked stage. Two are one disclosure deeper there, by Mission details' own A8 and A9 design: the members behind the roster toggle, under the one summary
+// line; the runtime records behind "Each record, with its state and reason", under their one count line. The removed card test was the only pin on the
+// meta line, so this pins it in the stage.
+describe('B2a, Q8 condition 1: everything the removed Home card showed is in the docked stage', () => {
+  it('title, pills, description, the unresolved records, every member with role and identity label, the meta line and the Trash', () => {
+    const row = populatedRow();
+    const stage = stageOf(render(row));
+    const words = markupText(stage, ' ').replace(/\s+/g, ' ');
+    expect(words).toContain(row.title);
+    expect(stage.match(/data-testid="di-scan-pill"/g)).toHaveLength(row.pills.length);
+    expect(words).toContain(row.description.replace(/\s+/g, ' '));
+    const stray = row.unresolvedAgents![0]!;
+    expect(stage).toContain('data-testid="di-scan-unresolved-status"');
+    expect(words).toContain(stray.name);
+    expect(words).toContain(stray.label);
+    expect(stage.match(/data-testid="di-scan-swarm-member"/g)).toHaveLength(row.swarm.length);
+    for (const member of row.swarm) expect(stage).toContain(`<span class="di-scan-role">${member.role}</span>`);
+    expect(stage.match(/data-testid="di-scan-identity" data-identity="[a-z_]+"/g)).toHaveLength(row.swarm.filter((m) => m.identity?.kind === 'unresolved').length);
+    expect(stage).toContain('data-testid="di-scan-swarm-status"');
+    expect(stage).toContain('data-testid="di-scan-swarm-toggle"');
+    expect(block(stage, 'di-scan-meta')).toContain(`<span>${row.footer}</span>`);
+    expect(stage).toContain('data-testid="di-scan-trash"');
   });
 });

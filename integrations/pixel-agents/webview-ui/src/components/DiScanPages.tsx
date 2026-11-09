@@ -9,7 +9,7 @@
  */
 import './diScanPages.css';
 
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { DiRetainedSource } from '../../../core/src/messages.js';
 import { TurnWords } from './DiMissionRequest.js';
@@ -61,7 +61,10 @@ import {
   DI_LAYOUT_NOTE,
   DI_MISSIONS_FOOTER,
   DI_MISSIONS_STATUSES,
+  DI_NEW_CLOSE_CONVERSATION,
+  DI_NEW_CLOSE_CONVERSATION_NOTE,
   DI_NEW_MISSION_SUB,
+  DI_NEW_READ_AGAIN,
   DI_READ_EMPTY,
   DI_READ_LAST_HAD,
   DI_READ_LAST_READ,
@@ -83,6 +86,7 @@ import {
   sendAskReason,
   sendOutcomeWords,
 } from './diScanPagesModel.js';
+import { useStickyScrollPad } from './diStickyPad.js';
 
 const NOT_RECORDED = 'Not recorded';
 /** What an unknown Mission may do, per filter (only these filters read a fact that can be unknown). */
@@ -153,6 +157,17 @@ export function StatusTag({
   );
 }
 
+/** Why "Read this conversation again" is held: a read of THAT conversation is already in flight. A press sends nothing until it settles. */
+const READ_AGAIN_IN_FLIGHT_REASON =
+  'This conversation is already being read. Read this conversation again once that answer arrives.';
+
+function conversationReadPending(
+  pending: MrState['pending'] | undefined,
+  conversationId: string,
+): boolean {
+  return pending?.some((item) => item.op === 'conversation' && item.conversationId === conversationId) === true;
+}
+
 /** A control drawn but not connected: disabled, its reason on hover AND spoken (aria-describedby), never a stub that looks live. */
 function Off({
   testid,
@@ -195,8 +210,16 @@ function LockIcon() {
 }
 
 function PageHead({ title, children }: { title: string; children?: ReactNode }) {
+  // R22: the head is sticky inside the stage, which is the scroller wherever the page scrolls as one column. Its strip is reserved as the stage's
+  // scroll-padding-top (diStickyPad.ts, the one home for it), so an arrival or a focused control is scrolled CLEAR of the head, never under it.
+  const headRef = useRef<HTMLElement | null>(null);
+  const stageRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    stageRef.current = headRef.current?.closest<HTMLElement>('.di-scan-stage') ?? null;
+  });
+  useStickyScrollPad(headRef, stageRef, true);
   return (
-    <header className="di-page-head">
+    <header ref={headRef} className="di-page-head">
       <h1 className="di-page-title" tabIndex={-1} data-page-heading="true">
         {title}
       </h1>
@@ -828,6 +851,8 @@ export function ReceptionPage({
   const info = reception.information.filter((card) => !cleared.has(card.key));
   const fixture = reception.source === 'fixture';
   const infoHeading = useId();
+  // F2: Clear info succeeds by ceasing to exist (it is drawn only while information is listed), so it owes a SURVIVING destination BEFORE it goes: this heading.
+  const infoHeadingRef = useRef<HTMLHeadingElement>(null);
   const shared = { rows, onOpenMission, onOpenDelivery, onOpenRequest };
   return (
     <div className="di-page di-reception" data-testid="di-reception-page">
@@ -897,14 +922,19 @@ export function ReceptionPage({
           data-testid="di-reception-info"
         >
           <div className="di-reception-section-head">
-            <h2 id={infoHeading}>Information</h2>
+            <h2 id={infoHeading} ref={infoHeadingRef} tabIndex={-1} data-testid="di-reception-info-heading">
+              Information
+            </h2>
             {info.length > 0 && (
               <button
                 type="button"
                 className="di-page-button"
                 data-testid="di-reception-clear-info"
                 title="Clears information items from this view only. Items waiting on you stay until they are handled."
-                onClick={() => setCleared(new Set(reception.information.map((card) => card.key)))}
+                onClick={() => {
+                  infoHeadingRef.current?.focus();
+                  setCleared(new Set(reception.information.map((card) => card.key)));
+                }}
               >
                 Clear info
               </button>
@@ -1001,6 +1031,8 @@ export interface DiNewMissionRequest {
   sendTurn: () => void;
   /** Clear the composer and the shown conversation (nothing is sent). */
   newConversation: () => void;
+  /** D1: close the shown conversation, KEEPING the typed ask as the same input (nothing is sent or cleared). */
+  closeConversation: () => void;
   /** READ one conversation and show it here (view only; nothing is sent). */
   readConversation: (conversationId: string) => void;
   /** While this page shows the conversation it is read as the open workspace reads it (reads only). */
@@ -1049,6 +1081,15 @@ function DraftSubmission({ turn, standing, request }: { turn: MrTurn; standing: 
 }
 
 /**
+ * 1A: whether a drafted turn's own control ("Open it in the request workspace to submit") is offered. ONE rule, read by the control's presence AND by Send's rank, so the page can
+ * never draw the open control and Send as primaries at once, nor draw neither while the proposal is waiting to be opened.
+ */
+function draftIsOpenable(turn: MrTurn, latest: boolean): boolean {
+  const standing = draftStanding(turn.submission?.state ?? null, turn.submission?.requestRef ?? null);
+  return latest && (standing === 'draft' || standing === 'refused');
+}
+
+/**
  * The drafted proposal, IN PLACE under the conversation that produced it: exactly as drafted (the workspace's own ProposalView), said to be a draft, with the
  * gates named. Its only control navigates to the workspace's Ask on this same conversation, where Submit is; nothing here submits, approves or starts.
  */
@@ -1068,7 +1109,7 @@ function DraftInPlace({
   // F5: ONE reading of where the draft stands, and every statement on this card written from it (the head, the Source line, the not-runnable line, the
   // submission line and the onward control), so no line says another state than the others
   const standing = draftStanding(submission?.state ?? null, submission?.requestRef ?? null);
-  const canOpen = latest && (standing === 'draft' || standing === 'refused');
+  const canOpen = draftIsOpenable(turn, latest);
   const note = draftNote(standing, latest);
   const sourceStanding =
     standing === 'submitted' && submission?.requestRef ? (
@@ -1088,6 +1129,7 @@ function DraftInPlace({
         source={{ requestRef: null, missionId: null, revision: null, digest: draft.digest }}
         meanings={meanings}
         heading="The proposal, exactly as drafted"
+        level={3}
         testId="di-new-draft-proposal"
         sourceStanding={sourceStanding}
       />
@@ -1113,21 +1155,59 @@ function DraftInPlace({
   );
 }
 
-/** The conversation, in place: every turn's words as the workspace draws them, and the drafted proposal under the turn that drafted it. */
-function NewMissionThread({ state, request }: { state: MrState; request: DiNewMissionRequest }) {
+/**
+ * The conversation, in place: every turn's words as the workspace draws them, and the drafted proposal under the turn that drafted it. `onNewConversation` is
+ * the thread's own reset (it clears the box, as it always has); the page moves focus out of the thread first, since the thread unmounts in that update.
+ */
+/** R22 (d): what New Mission last DREW of the conversation shown: its id, how many turns, and whether that was a READ (NewMissionThread reads it on mount). */
+interface DiNewMissionDrawn {
+  id: string | null;
+  count: number;
+  read: boolean;
+}
+
+function NewMissionThread({
+  state,
+  request,
+  onNewConversation,
+  drawnBefore,
+}: {
+  state: MrState;
+  request: DiNewMissionRequest;
+  onNewConversation: () => void;
+  drawnBefore: { readonly current: DiNewMissionDrawn | null };
+}) {
   const heading = useId();
   const turns = state.conversation.turns;
   const meanings = state.overview?.capabilities.scopeMeanings ?? {};
   const latestDraftTurn = [...turns].reverse().find((t) => t.draft !== null)?.turnId ?? null;
   const omitted = omittedWords(state.conversation);
-  // the newest turn, and a draft as it lands, come into view where they appear (the page does not move for anything else)
+  // the newest turn, and a draft as it lands, come into view where they appear (the page does not move for anything else).
+  // B2e: WHY the turns grew decides it, never "is this the first mount" (the thread mounts only with turns), in FOUR cases:
+  //  (a) a FRESH SEND: the conversation the person just started by sending, never read (`readSeq` null), drawn the first time: it comes into view;
+  //  (b) a LATER ARRIVAL in the conversation already drawn (a turn sent, its answer, a draft landing, a newer turn a re-read brings): it comes into view;
+  //  (c) the FIRST DRAW of a conversation that was READ (a Recent pick, or a switch to another): what was already there is not an arrival, so the page
+  //      does not move. A pick grows the count from 0 to all its turns, and scrolling then hid the way out under the title at 1280.
+  //  (d) R22: the FIRST TURN of a conversation the page had ALREADY DRAWN AS READ AND EMPTY (a send into it, or a turn a re-read brings): an ARRIVAL, so it
+  //      comes into view. The thread cannot remember that empty draw (it was not mounted), so it reads the page's record, on mount only. A first mount of
+  //      a conversation NOT drawn as read (a pick, a switch, a read landing after "not read" or "reading", as the retry's does) stays (c).
   const lastRef = useRef<HTMLLIElement | null>(null);
-  const seen = useRef<{ count: number; draft: string | null }>({ count: 0, draft: null });
+  const conversationId = state.conversation.id;
+  const wasRead = (state.conversation.readSeq ?? null) !== null;
+  const seen = useRef<{ id: string | null; count: number; draft: string | null } | null>(null);
   useEffect(() => {
-    if (turns.length > seen.current.count || latestDraftTurn !== seen.current.draft)
-      lastRef.current?.scrollIntoView?.({ block: 'nearest' });
-    seen.current = { count: turns.length, draft: latestDraftTurn };
-  }, [turns.length, latestDraftTurn]);
+    const before = seen.current;
+    const drawn = drawnBefore.current;
+    const emptyReadBefore = before === null && drawn !== null && drawn.id === conversationId && drawn.read && drawn.count === 0; // (d)
+    const firstDraw = !emptyReadBefore && (before === null || before.id !== conversationId);
+    const arrived =
+      emptyReadBefore || // (d) the first turn into a conversation drawn as read and empty
+      (firstDraw
+        ? !wasRead // (a) a fresh send comes into view; (c) a read conversation's first draw does not
+        : before !== null && (turns.length > before.count || latestDraftTurn !== before.draft)); // (b)
+    if (arrived) lastRef.current?.scrollIntoView?.({ block: 'nearest' });
+    seen.current = { id: conversationId, count: turns.length, draft: latestDraftTurn };
+  }, [conversationId, wasRead, turns.length, latestDraftTurn, drawnBefore]);
   return (
     <section className="di-new-section di-new-thread" data-testid="di-new-thread" aria-labelledby={heading}>
       <h2 className="di-new-label" id={heading}>
@@ -1157,7 +1237,7 @@ function NewMissionThread({ state, request }: { state: MrState; request: DiNewMi
         ))}
       </ol>
       <div className="di-new-thread-actions">
-        <button type="button" className="di-page-button" data-testid="di-new-new-conversation" onClick={request.newConversation}>
+        <button type="button" className="di-page-button" data-testid="di-new-new-conversation" onClick={onNewConversation}>
           Start a new conversation
         </button>
       </div>
@@ -1178,6 +1258,7 @@ export function NewMissionPage({
   request,
   onOpenRequestWorkspace,
   onOpenMissions,
+  escapeStep,
 }: {
   rows: readonly DiScanRow[];
   source: DiNewMissionSource;
@@ -1187,6 +1268,11 @@ export function NewMissionPage({
   /** Opens the request workspace's Requests (absent: the control is drawn disabled with its reason). */
   onOpenRequestWorkspace?: (opener: HTMLElement) => void;
   onOpenMissions: () => void;
+  /**
+   * D1: the scan face's Escape ladder asks this page for ONE step before it goes Home. While a conversation is shown, the page sets it to a step that closes
+   * that conversation (as "Close this conversation" does) and answers true; with none, it is null and Escape returns Home.
+   */
+  escapeStep?: RefObject<(() => boolean) | null>;
 }) {
   // without a request panel the box is the page's own (nothing can be sent from it); with one, it IS the workspace's Ask draft
   const [localAsk, setLocalAsk] = useState('');
@@ -1212,6 +1298,20 @@ export function NewMissionPage({
   const notShown = request !== undefined && shownId !== null && readSeq === null && request.state.conversation.turns.length === 0;
   const reading = notShown && request.state.pending.some((p) => p.op === 'conversation' && p.conversationId === shownId);
   const unread = notShown && !reading;
+  // R22 (d): what this page last DREW of the conversation shown (NewMissionThread mounts only with turns, so it cannot remember an empty read itself). Written
+  // after EVERY commit; the thread reads it on mount only, and a child's effects run before its parent's, so it reads the previous commit's record.
+  const drawnRef = useRef<DiNewMissionDrawn | null>(null);
+  useEffect(() => {
+    drawnRef.current = { id: shownId, count: request?.state.conversation.turns.length ?? 0, read: readSeq !== null };
+  });
+  // B2e / DESIGN.md: "Read this conversation again" is its own labelled control (the selected Recent ask CLOSES the conversation, so a click there no
+  // longer re-reads). The LIVE control is drawn only while this page says the read of the conversation shown FAILED (unread, or a current read-failure
+  // notice) AND no read of THAT conversation is in flight. While one is in flight the same label stays in the row, held and disabled, with the reason:
+  // removing it detached the control under a press. A successful read clears the failure, and the control goes with it.
+  const offerReadAgain = request !== undefined && (unread || request.state.notices.some(isCurrentReadFailure));
+  const readAgainInFlight =
+    shownId !== null &&
+    conversationReadPending(request?.state.pending, shownId);
   const askId = useId();
   const hintId = useId();
   const reasonId = useId();
@@ -1244,12 +1344,53 @@ export function NewMissionPage({
   // "Bring the ask back here" closes the workspace; focus then goes to the box, once it is drawn again
   const askRef = useRef<HTMLTextAreaElement | null>(null);
   const bringBackRef = useRef<HTMLButtonElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
   const focusAskNext = useRef(false);
   useEffect(() => {
     if (elsewhere || !focusAskNext.current) return;
     focusAskNext.current = false;
     askRef.current?.focus();
   }, [elsewhere]);
+  // D1: leaving the conversation shown, back to the blank start, KEEPING the typed ask: ONE atomic transition (the reducer's closeConversation), so the ask
+  // stays the SAME input (never a clear and a retype). Local only: nothing is sent, submitted, approved or started. Focus moves FIRST to the box that keeps the ask (it stays mounted
+  // through the reset), or, while the workspace shows its own box, to the control that brings it back: whatever had focus may unmount in this update.
+  const focusTheAskFirst = () => (askRef.current ?? bringBackRef.current)?.focus();
+  const leaveConversation = () => {
+    if (request === undefined) return;
+    focusTheAskFirst();
+    // one transition: the conversation closes and the ask stays the SAME input (never a clear and a retype, which would make it a new draft)
+    request.closeConversation();
+  };
+  // the thread's own "Start a new conversation" clears the box, as it always has; only where focus goes is decided here (it was left on <body>)
+  const startNewConversation = () => {
+    if (request === undefined) return;
+    focusTheAskFirst();
+    request.newConversation();
+  };
+  // B2e correction: focus moves FIRST to "Close this conversation", this control's neighbour in the same pinned row, so it may leave (it does once the read is
+  // in flight) without dropping focus on <body>. Not the box, as Close's own step does: Close REMOVES the conversation, a read DRAWS it, above the box, which
+  // then leaves the view (split-4, measured at every size), and the first draw must not scroll (case (c)). A second Enter there closes the conversation, as
+  // a second Enter on a picked Recent ask deselects it: disclosed, not hidden.
+  const readAgain = () => {
+    if (request === undefined || shownId === null || readAgainInFlight) return;
+    // focus moves FIRST to "Close this conversation", this control's neighbour, so the live button may become the held control without dropping focus
+    closeRef.current?.focus();
+    request.readConversation(shownId);
+  };
+  const conversationShown = request !== undefined && shownId !== null;
+  // the Escape ladder's step for this page, kept current with the conversation shown and the ask as typed
+  useEffect(() => {
+    if (escapeStep === undefined) return;
+    escapeStep.current = conversationShown
+      ? () => {
+          leaveConversation();
+          return true;
+        }
+      : null;
+    return () => {
+      escapeStep.current = null;
+    };
+  });
   const held = sendAskReason(ask, use, panel);
   // not available now: the hold says why, in the office's own words
   const reason =
@@ -1270,6 +1411,11 @@ export function NewMissionPage({
     return () => watch(false);
   }, [watch]);
   const recent = recentAsks(source, state?.overview ?? null);
+  // 1A: the page's ONE primary. The open control (inside the thread) is the primary while it is offered on the latest drafted turn; Send is then a secondary. The thread mounts under the
+  // same condition as at its call site below, so this reads the drawn state and never a hidden one.
+  const draftedTurn =
+    state !== null && request !== undefined && state.conversation.turns.length > 0 ? [...state.conversation.turns].reverse().find((t) => t.draft !== null) : undefined;
+  const openIsPrimary = draftedTurn !== undefined && draftIsOpenable(draftedTurn, true);
   return (
     <div className="di-page di-new" data-testid="di-new-mission">
       <PageHead title="New Mission">{specimen && <FixtureTag />}</PageHead>
@@ -1290,203 +1436,242 @@ export function NewMissionPage({
           </button>
         </div>
       )}
-      {state !== null && request !== undefined && state.conversation.turns.length > 0 && (
-        <NewMissionThread state={state} request={request} />
-      )}
-      {/* read, and empty: said as that (never as "not read", and never left as a blank page) */}
-      {state !== null && shownId !== null && readSeq !== null && state.conversation.turns.length === 0 && (
-        <p className="di-page-note" data-testid="di-new-thread-empty">
-          {DI_READ_EMPTY}
-        </p>
-      )}
-      <section className="di-new-section">
-        <h2 className="di-new-label">Always included</h2>
-        <HarnessChip testid="di-new-harness" />
-        <p className="di-page-note">
-          Every Mission runs from here. DI adds the other repos it needs.
-        </p>
-      </section>
-      <section className="di-new-section">
-        <h2 className="di-new-label">
-          Limit to repos <span className="di-new-optional">Optional</span>
-        </h2>
-        <div className="di-new-box">
-          <span className="di-new-placeholder">Leave empty to let DI choose</span>
-          <Off testid="di-new-add-repo" label="+ Add repo" reason={REASON.addRepo} />
-        </div>
-      </section>
-      <section className="di-new-section">
-        <label className="di-new-label" htmlFor={askId}>
-          Ask
-        </label>
-        {elsewhere && request !== undefined ? (
-          <div className="di-new-elsewhere" role="note" data-testid="di-new-ask-in-workspace">
-            <p className="di-page-note">{DI_ASK_IN_WORKSPACE_NOTE}</p>
-            <button
-              ref={bringBackRef}
-              type="button"
-              className="di-page-button"
-              data-testid="di-new-ask-bring-back"
-              onClick={() => {
-                focusAskNext.current = true;
-                request.closeWorkspace(null);
-              }}
-            >
-              {DI_ASK_BRING_BACK}
-            </button>
+      {/* B2e (Direction B, the selected handoff): Recent in a LEFT pane, its pick marked, the conversation docked beside it. Each pane scrolls
+          inside itself, so the title, the way out, the Recent pane and Send stay on screen while a long conversation scrolls. The DOM order is
+          unchanged (the main content, then Recent and the request workspace), so Tab order is exactly as before; the grid places Recent left. */}
+      {/* B2e correction (F4): while the request workspace holds the ask, the panes swap columns (diScanPages.css), DOM order unchanged */}
+      <div className="di-new-body" data-testid="di-new-body" data-ask={elsewhere ? 'elsewhere' : undefined}>
+        <div className="di-new-main" data-testid="di-new-main">
+          {conversationShown && (
+            // D1: ONE labelled way out of the conversation shown, in every state of a Recent pick (read with turns, read and empty, still being read, not read):
+            // back to the blank start, the typed ask kept. The first Escape does the same (DiScanPanel's ladder asks this page for that step).
+            <div className="di-new-thread-actions">
+              <button
+                ref={closeRef}
+                type="button"
+                className="di-page-button"
+                data-testid="di-new-close-conversation"
+                aria-keyshortcuts="Escape"
+                title={DI_NEW_CLOSE_CONVERSATION_NOTE}
+                onClick={leaveConversation}
+              >
+                {DI_NEW_CLOSE_CONVERSATION}
+              </button>
+              {offerReadAgain &&
+                (readAgainInFlight ? (
+                  <Off testid="di-new-read-again" label={DI_NEW_READ_AGAIN} reason={READ_AGAIN_IN_FLIGHT_REASON} />
+                ) : (
+                  <button type="button" className="di-page-button" data-testid="di-new-read-again" onClick={readAgain}>
+                    {DI_NEW_READ_AGAIN}
+                  </button>
+                ))}
+            </div>
+          )}
+          <div className="di-new-main-scroll" data-testid="di-new-main-scroll">
+            {state !== null && request !== undefined && state.conversation.turns.length > 0 && (
+              <NewMissionThread state={state} request={request} onNewConversation={startNewConversation} drawnBefore={drawnRef} />
+            )}
+            {/* read, and empty: said as that (never as "not read", and never left as a blank page) */}
+            {state !== null && shownId !== null && readSeq !== null && state.conversation.turns.length === 0 && (
+              <p className="di-page-note" data-testid="di-new-thread-empty">
+                {DI_READ_EMPTY}
+              </p>
+            )}
+            <section className="di-new-section">
+              <h2 className="di-new-label">Always included</h2>
+              <HarnessChip testid="di-new-harness" />
+              <p className="di-page-note">
+                Every Mission runs from here. DI adds the other repos it needs.
+              </p>
+            </section>
+            <section className="di-new-section">
+              <h2 className="di-new-label">
+                Limit to repos <span className="di-new-optional">Optional</span>
+              </h2>
+              <div className="di-new-box">
+                <span className="di-new-placeholder">Leave empty to let DI choose</span>
+                <Off testid="di-new-add-repo" label="+ Add repo" reason={REASON.addRepo} />
+              </div>
+            </section>
+            <section className="di-new-section">
+              <label className="di-new-label" htmlFor={askId}>
+                Ask
+              </label>
+              {elsewhere && request !== undefined ? (
+                <div className="di-new-elsewhere" role="note" data-testid="di-new-ask-in-workspace">
+                  <p className="di-page-note">{DI_ASK_IN_WORKSPACE_NOTE}</p>
+                  <button
+                    ref={bringBackRef}
+                    type="button"
+                    className="di-page-button"
+                    data-testid="di-new-ask-bring-back"
+                    onClick={() => {
+                      focusAskNext.current = true;
+                      request.closeWorkspace(null);
+                    }}
+                  >
+                    {DI_ASK_BRING_BACK}
+                  </button>
+                </div>
+              ) : (
+                <textarea
+                  ref={askRef}
+                  id={askId}
+                  className="di-new-ask"
+                  data-testid="di-new-ask"
+                  rows={4}
+                  value={ask}
+                  placeholder="Say what you want done, in plain words."
+                  aria-describedby={hintId}
+                  onChange={(event) => setAsk(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Cmd Return (Ctrl Return) does what Send does, and adds no line break
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                      event.preventDefault();
+                      send();
+                    }
+                  }}
+                />
+              )}
+              {request !== undefined && (
+                // a live region that is always present, so an outcome that arrives is announced; each outcome is the workspace's own notice, dismissed there too
+                <div className="di-new-outcomes" role="status" data-testid="di-new-send-outcomes">
+                  {outcomes.length > 0 && (
+                    <ul aria-label="What came of Send and of reading this conversation">
+                      {outcomes.map(({ notice, ids }) => (
+                        <li key={notice.id} className="di-new-outcome" data-kind={notice.kind} data-op={notice.op} data-testid="di-new-send-outcome">
+                          <span className="di-page-note">
+                            <strong>{sendOutcomeWords(notice.kind, notice.op)}</strong> {notice.text}
+                            {notice.op === 'conversation' ? ` ${readTail}` : ''}
+                          </span>
+                          <button
+                            type="button"
+                            className="di-page-button"
+                            aria-label="Dismiss this notice"
+                            data-testid="di-new-send-outcome-dismiss"
+                            onClick={() => {
+                              // the control succeeds by ceasing to exist, so it owes a SURVIVING destination BEFORE it goes: the page's own landing, the ask box
+                              focusTheAskFirst();
+                              ids.forEach((id) => request.dismiss(id));
+                            }}
+                          >
+                            Dismiss
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {unread && request !== undefined && (
+                // R3-REC: the way out, on the page in exactly the state that needs it, named word for word by Send's hold (DI_ASK_UNREAD). It is the same
+                // keeping reset as "Close this conversation" (leaveConversation: the reducer's atomic closeConversation, the ask kept as the same input; local only). R3-REC focus
+                // (measured, logs/95: this control unmounts in the update it causes, which left focus on <body>): leaveConversation moves it to the box first.
+                <div className="di-new-thread-actions">
+                  <button
+                    type="button"
+                    className="di-page-button"
+                    data-testid="di-new-leave-unread"
+                    onClick={leaveConversation}
+                  >
+                    {DI_ASK_LEAVE_UNREAD}
+                  </button>
+                </div>
+              )}
+            </section>
+            <section className="di-new-section">
+              <h2 className="di-new-label">
+                Attachments <span className="di-new-optional">Optional</span>
+              </h2>
+              <Off testid="di-new-add-files" label="+ Add files" reason={REASON.addFiles} />
+            </section>
+            {source.proposal !== null && (
+              <section className="di-new-section" data-testid="di-new-sample">
+                <button
+                  type="button"
+                  className="di-page-button"
+                  data-testid="di-new-sample-proposal"
+                  aria-expanded={sampleOpen}
+                  aria-controls={sampleId}
+                  onClick={() => setSampleOpen((open) => !open)}
+                >
+                  {sampleOpen ? 'Hide the sample proposal' : 'See the sample proposal'}
+                </button>
+                <div id={sampleId} hidden={!sampleOpen}>
+                  <SampleProposal proposal={source.proposal} />
+                </div>
+              </section>
+            )}
           </div>
-        ) : (
-          <textarea
-            ref={askRef}
-            id={askId}
-            className="di-new-ask"
-            data-testid="di-new-ask"
-            rows={4}
-            value={ask}
-            placeholder="Say what you want done, in plain words."
-            aria-describedby={hintId}
-            onChange={(event) => setAsk(event.target.value)}
-            onKeyDown={(event) => {
-              // Cmd Return (Ctrl Return) does what Send does, and adds no line break
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                send();
-              }
-            }}
-          />
-        )}
-        {request !== undefined && (
-          // a live region that is always present, so an outcome that arrives is announced; each outcome is the workspace's own notice, dismissed there too
-          <div className="di-new-outcomes" role="status" data-testid="di-new-send-outcomes">
-            {outcomes.length > 0 && (
-              <ul aria-label="What came of Send and of reading this conversation">
-                {outcomes.map(({ notice, ids }) => (
-                  <li key={notice.id} className="di-new-outcome" data-kind={notice.kind} data-op={notice.op} data-testid="di-new-send-outcome">
-                    <span className="di-page-note">
-                      <strong>{sendOutcomeWords(notice.kind, notice.op)}</strong> {notice.text}
-                      {notice.op === 'conversation' ? ` ${readTail}` : ''}
-                    </span>
+        </div>
+        <div className="di-new-side" data-testid="di-new-side">
+          <section className="di-new-section" data-testid="di-new-recent">
+            <h2 className="di-new-label">Recent</h2>
+            {recent.kind === 'not_read' ? (
+              <p className="di-page-note" data-testid="di-new-recent-not-read">
+                {recent.words}
+              </p>
+            ) : recent.items.length === 0 ? (
+              <p className="di-page-note" data-testid="di-new-recent-none">
+                {DI_RECENT_NONE}
+              </p>
+            ) : (
+              <ul className="di-new-recent">
+                {recent.items.map((item) => (
+                  <li key={item.conversationId ?? item.text}>
                     <button
                       type="button"
-                      className="di-page-button"
-                      aria-label="Dismiss this notice"
-                      data-testid="di-new-send-outcome-dismiss"
-                      onClick={() => ids.forEach((id) => request.dismiss(id))}
+                      className="di-chip"
+                      data-testid="di-new-recent-ask"
+                      data-conversation={item.conversationId ?? undefined}
+                      aria-current={item.conversationId !== null && item.conversationId === state?.conversation.id ? 'true' : undefined}
+                      title={
+                        item.conversationId === null
+                          ? 'Puts this ask in the box. Nothing is sent.'
+                          : item.conversationId === state?.conversation.id
+                            ? DI_NEW_CLOSE_CONVERSATION_NOTE
+                            : 'Shows this conversation here. Nothing is sent.'
+                      }
+                      onClick={() => {
+                        const id = item.conversationId;
+                        // B2e: the pick DESELECTS from the list. The selected ask, clicked again, closes the conversation by the SAME transition as "Close
+                        // this conversation" (D1: back to the blank start, the typed ask kept, focus in the box); it is never read again
+                        if (id !== null && id === state?.conversation.id) leaveConversation();
+                        else if (id !== null && request !== undefined) request.readConversation(id);
+                        else setAsk(item.text);
+                      }}
                     >
-                      Dismiss
+                      <Line text={item.text} />
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-          </div>
-        )}
-        {unread && request !== undefined && (
-          // R3-REC: the way out, on the page in exactly the state that needs it. It is the existing local reset (the reducer's newConversation, unchanged for
-          // every other caller: the thread's own control still clears the box), and in the same click the ask the person typed is put back. Local only:
-          // nothing is sent, submitted, approved or started.
-          <div className="di-new-thread-actions">
-            <button
-              type="button"
-              className="di-page-button"
-              data-testid="di-new-leave-unread"
-              onClick={() => {
-                // R3-REC focus (measured, logs/95: pointer, Enter and Space all left focus on <body>, because this control unmounts in the update it causes):
-                // focus moves FIRST to the box that keeps the ask (it stays mounted through the reset), or, while the workspace shows its own box, to the
-                // control that brings it back
-                (askRef.current ?? bringBackRef.current)?.focus();
-                const kept = ask;
-                request.newConversation();
-                request.setComposer(kept);
-              }}
-            >
-              {DI_ASK_LEAVE_UNREAD}
-            </button>
-          </div>
-        )}
-      </section>
-      <section className="di-new-section">
-        <h2 className="di-new-label">
-          Attachments <span className="di-new-optional">Optional</span>
-        </h2>
-        <Off testid="di-new-add-files" label="+ Add files" reason={REASON.addFiles} />
-      </section>
-      {source.proposal !== null && (
-        <section className="di-new-section" data-testid="di-new-sample">
-          <button
-            type="button"
-            className="di-page-button"
-            data-testid="di-new-sample-proposal"
-            aria-expanded={sampleOpen}
-            aria-controls={sampleId}
-            onClick={() => setSampleOpen((open) => !open)}
-          >
-            {sampleOpen ? 'Hide the sample proposal' : 'See the sample proposal'}
-          </button>
-          <div id={sampleId} hidden={!sampleOpen}>
-            <SampleProposal proposal={source.proposal} />
-          </div>
-        </section>
-      )}
-      <section className="di-new-section" data-testid="di-new-recent">
-        <h2 className="di-new-label">Recent</h2>
-        {recent.kind === 'not_read' ? (
-          <p className="di-page-note" data-testid="di-new-recent-not-read">
-            {recent.words}
-          </p>
-        ) : recent.items.length === 0 ? (
-          <p className="di-page-note" data-testid="di-new-recent-none">
-            {DI_RECENT_NONE}
-          </p>
-        ) : (
-          <ul className="di-new-recent">
-            {recent.items.map((item) => (
-              <li key={item.conversationId ?? item.text}>
-                <button
-                  type="button"
-                  className="di-chip"
-                  data-testid="di-new-recent-ask"
-                  data-conversation={item.conversationId ?? undefined}
-                  aria-current={item.conversationId !== null && item.conversationId === state?.conversation.id ? 'true' : undefined}
-                  title={
-                    item.conversationId === null
-                      ? 'Puts this ask in the box. Nothing is sent.'
-                      : 'Shows this conversation here. Nothing is sent.'
-                  }
-                  onClick={() => {
-                    const id = item.conversationId;
-                    if (id !== null && request !== undefined) request.readConversation(id);
-                    else setAsk(item.text);
-                  }}
-                >
-                  <Line text={item.text} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section className="di-new-section di-new-requests">
-        {onOpenRequestWorkspace === undefined ? (
-          <Off testid="di-new-open-workspace" label="Review requests" reason={panel === 'unavailable' ? REASON.workspaceNotNow : REASON.noWorkspace} />
-        ) : (
-          <button
-            type="button"
-            className="di-page-button"
-            data-testid="di-new-open-workspace"
-            onClick={(event) => onOpenRequestWorkspace(event.currentTarget)}
-          >
-            Review requests
-          </button>
-        )}
-      </section>
+          </section>
+          <section className="di-new-section di-new-requests">
+            {onOpenRequestWorkspace === undefined ? (
+              <Off testid="di-new-open-workspace" label="Review requests" reason={panel === 'unavailable' ? REASON.workspaceNotNow : REASON.noWorkspace} />
+            ) : (
+              <button
+                type="button"
+                className="di-page-button"
+                data-testid="di-new-open-workspace"
+                onClick={(event) => onOpenRequestWorkspace(event.currentTarget)}
+              >
+                Review requests
+              </button>
+            )}
+          </section>
+        </div>
+      </div>
       <footer className="di-new-foot">
         <span className="di-page-note" id={hintId} data-testid="di-new-send-hint">
           <kbd>Cmd Return</kbd> {DI_ASK_SEND_HINT}
         </span>
         <button
           type="button"
-          className="di-page-button di-page-primary"
+          className={openIsPrimary ? 'di-page-button' : 'di-page-button di-page-primary'}
+          data-rank={openIsPrimary ? 'secondary' : 'primary'}
           data-testid="di-new-send"
           // held, never `disabled`: a Send that becomes unavailable while it has focus (its message is being answered) keeps that focus
           aria-disabled={reason !== null ? 'true' : undefined}

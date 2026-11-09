@@ -92,7 +92,7 @@ const cards = (page: Page) =>
       const t = title ? getComputedStyle(title) : null;
       return {
         id: row.getAttribute('data-mission-ref'),
-        selected: row.getAttribute('aria-pressed') === 'true',
+        selected: row.getAttribute('aria-current') === 'true',
         box: b(row)!,
         border: { width: parseFloat(s.borderTopWidth), color: s.borderTopColor, style: s.borderTopStyle },
         title: b(title),
@@ -116,7 +116,9 @@ const tokenColour = (page: Page, token: string) =>
 const centre = (b: Box) => (b.top + b.bottom) / 2;
 
 test(
-  'H-1: every collapsed Home card carries its OWN border, selected or not, as separate cards; the selected one keeps the yellow state edge',
+  // CHANGED IN B2a (Q8 = (a), Q4): a row is marked only while its Mission is DOCKED (aria-current, the same state as the rail's mark). The name said "the
+  // selected one"; Home had one preselected (the specimen harness's first row, drawn with the removed inline card).
+  'H-1: every collapsed Home card carries its OWN border, as separate cards, none marked with nothing docked; the DOCKED Mission\'s row keeps the yellow state edge',
   async () => {
     const page = await home();
     const all = await cards(page);
@@ -130,6 +132,7 @@ test(
       expect(card.border.color, card.id!).toBe(card.selected ? yellow : grouping);
     }
     expect(all.filter((c) => !c.selected).length).toBeGreaterThanOrEqual(2);
+    expect(all.filter((c) => c.selected).map((c) => c.id), 'B2a: with nothing docked, no Home row is marked').toEqual([]);
     // what IDENTIFIES each card as a control (why its edge need not): a button with a non-empty text name
     const named = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>('[data-testid="di-scan-row"]')].map((r) => ({
@@ -157,7 +160,7 @@ test(
     const paint = (selected: boolean) =>
       page.evaluate((sel) => {
         const row = [...document.querySelectorAll<HTMLElement>('[data-testid="di-scan-row"]')].find(
-          (r) => (r.getAttribute('aria-pressed') === 'true') === sel,
+          (r) => (r.getAttribute('aria-current') === 'true') === sel,
         )!;
         const s = getComputedStyle(row);
         return { edge: s.borderTopColor, fill: s.backgroundColor };
@@ -174,10 +177,8 @@ test(
     const unselected = await paint(false);
     // MEASURED, not held: a grouping edge (see the header)
     report('unselected, grouping edge, not held to 3:1', unselected.edge, unselected.fill);
-    const selected = await paint(true);
-    expect(report('selected, yellow state edge, held to 3:1', selected.edge, selected.fill)).toBeGreaterThanOrEqual(3);
     // the focus ring on a card, reached by the keyboard
-    await page.focus('[data-testid="di-scan-row"][aria-pressed="false"]');
+    await page.focus('[data-testid="di-scan-row"]:not([aria-current])');
     await page.keyboard.press('Shift+Tab');
     await page.keyboard.press('Tab');
     const ring = await page.evaluate(() => {
@@ -191,6 +192,13 @@ test(
     expect(report('focus ring, held to 3:1', ring.color, ring.fill)).toBeGreaterThanOrEqual(3);
     // separate cards: each ends before the next begins
     for (let i = 1; i < all.length; i++) expect(all[i]!.box.top).toBeGreaterThan(all[i - 1]!.box.bottom);
+    // CHANGED IN B2a: the yellow state edge marks the DOCKED Mission's row. In B2a Home is COVERED while a Mission is docked (B2b docks the stage beside it at
+    // 1440 and wider), so this reads the docked row's COMPUTED edge and fill, the colours it is drawn with when shown; it is not a capture of it shown.
+    await page.click('[data-testid="di-scan-row"]');
+    await page.waitForSelector('[data-testid="di-scan-row"][aria-current="true"]', { state: 'attached' });
+    const docked = await paint(true);
+    expect(docked.edge).toBe(yellow);
+    expect(report('docked, yellow state edge, held to 3:1 (computed; Home covered in B2a)', docked.edge, docked.fill)).toBeGreaterThanOrEqual(3);
     await page.close();
   },
   STEPS_MS,
@@ -216,57 +224,36 @@ test(
       // the context line below the title row
       expect(context!.top, card.id!).toBeGreaterThanOrEqual(Math.max(title!.bottom, pills!.bottom) - 1);
     }
-    // the expanded card's title takes the same compact regular scale, its pills on its row
-    const detail = await page.evaluate(() => {
-      const t = document.querySelector('[data-testid="di-scan-detail"] .di-scan-title');
-      const p = document.querySelector('[data-testid="di-scan-detail"] .di-scan-pills');
-      if (!t || !p) return null;
-      const s = getComputedStyle(t);
-      const tr = t.getBoundingClientRect();
-      const pr = p.getBoundingClientRect();
-      return { px: parseFloat(s.fontSize), weight: Number(s.fontWeight), tTop: tr.top, tBottom: tr.bottom, pMid: (pr.top + pr.bottom) / 2 };
-    });
-    expect(detail).not.toBeNull();
-    expect(detail!.px).toBeGreaterThanOrEqual(13);
-    expect(detail!.px).toBeLessThanOrEqual(15);
-    expect(detail!.weight).toBeLessThanOrEqual(500);
-    expect(detail!.pMid).toBeGreaterThanOrEqual(detail!.tTop - 2);
-    expect(detail!.pMid).toBeLessThanOrEqual(detail!.tBottom + 2);
+    // CHANGED IN B2a (Q8 = (a)): this also held Home's EXPANDED card's title to the same compact scale, its pills on its row. The card is removed (one click
+    // docks), so that half has no subject; the docked title is Mission details' own (pixel-lock 02 scale, diScanComposition). The collapsed cards above are
+    // unchanged. And Home now draws no expanded card at all:
+    expect(await page.locator('[data-testid="di-scan-detail"]').count()).toBe(0);
     await page.close();
   },
   STEPS_MS,
 );
 
+// CHANGED IN B2a (Q8 = (a)): H-3 held Home's EXPANDED card's Swarm to reference 01-home (per role, its word above a SMALL avatar, the name beside it, the
+// four in one row). The card is removed, so that layout has no subject. The four roles are not lost: they are in the docked Mission's roster, one toggle
+// under its summary line (A9), drawn as Mission details' own four cards. This checks them THERE, rendered, on the same specimen.
 test(
-  'H-3: the expanded card\'s Swarm is, per role, the role\'s word above a SMALL avatar with the name BESIDE it, the four roles in one row',
+  'H-3 (B2a): Home draws no expanded card; the docked Mission\'s four roles, each with its word, avatar and name, are in its roster, one labelled toggle away',
   async () => {
     const page = await home();
-    const members = await page.evaluate(() => {
-      const b = (el: Element | null) => {
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width };
-      };
-      return [...document.querySelectorAll('[data-testid="di-scan-detail"] [data-testid="di-scan-swarm"] .di-scan-member')].map((li) => ({
-        role: b(li.querySelector('.di-scan-role')),
-        avatar: b(li.querySelector('.di-scan-avatar')),
-        name: b(li.querySelector('.di-scan-name')),
-      }));
-    });
-    expect(members).toHaveLength(4);
-    for (const [i, m] of members.entries()) {
-      expect(m.role && m.avatar && m.name, String(i)).toBeTruthy();
-      // small
-      expect(m.avatar!.width, String(i)).toBeGreaterThanOrEqual(20);
-      expect(m.avatar!.width, String(i)).toBeLessThanOrEqual(32);
-      // the name BESIDE the avatar, on its line
-      expect(m.name!.left, String(i)).toBeGreaterThanOrEqual(m.avatar!.right);
-      expect(Math.abs(centre(m.name!) - centre(m.avatar!)), String(i)).toBeLessThanOrEqual(4);
-      // the role's word above
-      expect(m.role!.bottom, String(i)).toBeLessThanOrEqual(m.avatar!.top + 1);
+    expect(await page.locator('[data-testid="di-scan-detail"]').count()).toBe(0);
+    await page.click('[data-testid="di-scan-row"]');
+    await page.waitForSelector('[data-testid="di-scan-mission-title"]');
+    const toggle = page.locator('[data-testid="di-scan-swarm-toggle"]');
+    expect(await toggle.getAttribute('aria-expanded')).toBe('false');
+    await toggle.click();
+    const members = page.locator('[data-testid="di-scan-swarm-member"]');
+    expect(await members.count()).toBe(4);
+    for (let i = 0; i < 4; i++) {
+      const m = members.nth(i);
+      expect(await m.isVisible(), String(i)).toBe(true);
+      for (const part of ['.di-scan-role', '.di-scan-avatar', '.di-scan-name']) expect(await m.locator(part).isVisible(), `${i} ${part}`).toBe(true);
+      expect((await m.locator('.di-scan-role').innerText()).trim().length, String(i)).toBeGreaterThan(0);
     }
-    // one row: every avatar at the same height
-    for (const m of members) expect(Math.abs(m.avatar!.top - members[0]!.avatar!.top)).toBeLessThanOrEqual(2);
     await page.close();
   },
   STEPS_MS,

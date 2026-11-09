@@ -284,9 +284,22 @@ test(
       false,
     );
 
-    // the Map's isolation resumes: the next Escape closes the Map
+    // INTRODUCED TEST UPDATE (K1's APPROVED behaviour change, rulings 4 and 5 of .herd/state/k1-keyboard-ownership-ruling.md; not maintenance):
+    // this step asserted the SUPERSEDED ladder, "the next Escape closes the Map", pressed with focus on the opener, a control of the panel BESIDE the
+    // uncovered Map. Now that press is the panel's, with no global fallback: the Map STAYS open and focus stays. The Map is closed from its own
+    // control, reached by SEQUENTIAL Shift+Tab, where Map-owned Escape closes it and leaves focus on that control.
+    await p().keyboard.press('Escape');
+    await p().waitForTimeout(400);
+    assert.equal(await p().locator(MAP).count(), 1, "Escape on the opener (the panel's) leaves the Map open");
+    assert.ok(await active(OPEN), 'and focus where it was');
+    const TOGGLE = '[data-testid="world-view-map"]';
+    let presses = 0;
+    for (; presses < 120 && !(await active(TOGGLE)); presses++) await p().keyboard.press('Shift+Tab');
+    console.log(`RECEPTION-REPIN shiftTabsFromOpenerToMapToggle=${presses}`);
+    assert.ok(await active(TOGGLE), `sequential Shift+Tab reached the Map's toggle (${presses} presses)`);
     await p().keyboard.press('Escape');
     await p().waitForSelector(MAP, { state: 'detached' });
+    assert.ok(await active(TOGGLE), "Map-owned Escape closed the Map and left focus on its toggle");
   },
   STEPS_MS,
 );

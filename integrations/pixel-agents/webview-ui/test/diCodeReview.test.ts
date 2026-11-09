@@ -2562,6 +2562,21 @@ const readingLayout = () =>
     const win = window.innerHeight;
     const titleBottom = q('.di-rv-top')?.getBoundingClientRect().bottom ?? 0;
     const inside = (r: DOMRect, box: { top: number; bottom: number }) => r.top >= Math.max(box.top, titleBottom) - 0.5 && r.bottom <= Math.min(box.bottom, win) + 0.5;
+    // The allocation the layout actually made, UNROUNDED: the room a parent had left for one child after its OTHER in-flow children (looking
+    // through display: contents wrappers). A test asks whether a region received that room, a relation that moves with the height of any bar
+    // above or below it, instead of comparing the region with a constant that a different resolved font would move.
+    const inFlow = (el: Element): Element[] =>
+      [...el.children].flatMap((c) => {
+        const d = getComputedStyle(c);
+        if (d.display === 'contents') return inFlow(c);
+        return d.position === 'absolute' || d.position === 'fixed' ? [] : [c];
+      });
+    const roomFor = (parent: Element, child: Element) => {
+      const cs = getComputedStyle(parent);
+      const inner =
+        parent.getBoundingClientRect().height - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      return inner - inFlow(parent).filter((c) => c !== child).reduce((a, c) => a + c.getBoundingClientRect().height, 0);
+    };
     let codeInfo = null;
     if (code) {
       const box = code.getBoundingClientRect();
@@ -2577,6 +2592,8 @@ const readingLayout = () =>
         wholeRows: whole.length,
         firstSectionWhole: bar0 !== null && inside(bar0.getBoundingClientRect(), client) && names0.every((n) => inside(n.getBoundingClientRect(), client)),
         firstSectionNameRows: names0.length,
+        heightRaw: box.height,
+        room: code.parentElement ? roomFor(code.parentElement, code) : null,
       };
     }
     let treeInfo = null;
@@ -2587,8 +2604,13 @@ const readingLayout = () =>
         rect: R(tree),
         clientHeight: tree.clientHeight,
         wholeRows: [...tree.querySelectorAll('[role="treeitem"]')].filter((el) => inside(el.getBoundingClientRect(), client)).length,
+        rowPx: tree.querySelector('[role="treeitem"]')?.getBoundingClientRect().height ?? 0,
+        heightRaw: box.height,
+        room: tree.parentElement ? roomFor(tree.parentElement, tree) : null,
       };
     }
+    const bodyEl = q('.di-rv-body');
+    const hintsEl = q('[data-testid="di-review-hints"]');
     return {
       window: { w: window.innerWidth, h: win },
       dialog: { height: f(dialog.getBoundingClientRect().height) },
@@ -2599,6 +2621,8 @@ const readingLayout = () =>
       diffHead: R(q('.di-rv-diff-head')),
       treeTools: R(q('.di-rv-tree-tools')),
       hints: R(q('[data-testid="di-review-hints"]')),
+      hintsLinePx: hintsEl ? parseFloat(getComputedStyle(hintsEl).lineHeight) : null,
+      allocation: bodyEl ? { bodyHeight: bodyEl.getBoundingClientRect().height, bodyRoom: roomFor(dialog, bodyEl) } : null,
       code: codeInfo,
       tree: treeInfo,
     };
@@ -2710,9 +2734,29 @@ test(
     // Measured on the product before either change (viewport-BASELINE-metrics log) and after both (viewport-WIP2 log). The narrow-layout rules alone
     // moved nothing at any of these sizes (viewport-WIP1 log). The chrome controls' 1 px borders (AC1) make a content-sized button 1.75 px shorter
     // (33.75 px to the 32 px minimum) and the search field 1.8 px: so the overview is 85.5 -> 83.8 px, the search tools 78.6 -> 76.8 px, and the
-    // code region and the file tree of a wide window take that space (669.7 -> 673.2 px and 702 -> 705.5 px). Inter, the bundled Home face
-    // (index.css --di-font-ui), then sets the key-hints line 1 px taller than the system face did (31.4 -> 32.4 px), and the code region and the
-    // file tree of a wide window give that 1 px back (673.2 -> 672.2 px and 705.5 -> 704.5 px): the visible code is 672 px, still 30 whole rows.
+    // code region and the file tree of a wide window take that space (669.7 -> 673.2 px and 702 -> 705.5 px).
+    // THE KEY-HINTS FOOTER AND WHAT IT HANDS DOWN ARE NOT COMPARED WITH PIXEL CONSTANTS BELOW. The footer's height depends on the face its kbd
+    // keys are drawn in (.di-rv kbd uses --rv-font-code, a stack that ends in the generic monospace, so the contract leaves that face to the
+    // platform), and the layout passes that height 1:1 to the body, the code region and the file tree. Measured on one machine (Google Chrome
+    // 156.0.8078.81, macOS 27.0.1 arm64), in one page, with the face the browser really used named by CDP: the shipped stack drew the keys in
+    // Menlo: footer 31.39 px, code region 673.22 px (visible 673), file tree 705.52 px; the keys requested as Courier New (drawn in Courier New):
+    // footer 32.39 px, code region 672.22 px (visible 672), file tree 704.52 px. That second arm shows the dependence is real and two-sided; it
+    // does not say the declared stack resolves to that face anywhere. Inter draws the footer's own text in BOTH, so it is not what separates
+    // them. Nothing else in this block moved between those two arms (the dialog, title bar, overview, file bar and search tools agree to 1/64 px):
+    // that is independence from this kbd-face substitution between two named arms, not from every platform font. The capacity held in both (30
+    // whole code rows, 23 file rows). The figures this test used to carry for the footer and those three regions (32.4; 781.4; 672.2 with a
+    // visible 672; 704.5) equal the Courier New arm's figures; where they were first measured is NOT established. The footer is not drawn in a
+    // narrow view at all (DiCodeReview.tsx draws it only when !narrow), so the 390 x 844 and 320 x 568 blocks below cannot depend on that face.
+    // What the wide window owes the reader is asserted instead: the footer is one line whose bottom edge is inside the window; the body, the code
+    // region and the file tree are each given the room their siblings leave them, measured as OUTER (border-box) height, so outer height taken
+    // from one of them and given to no bar fails (this is not a containment or a position check: it does not look at padding or insets inside
+    // the box); and the code region and the file tree keep the pixel room for the whole rows they promise (a restatement of the wholeRows
+    // counts, not an independent check). ACCEPTED BOUND: a bar that grows a few pixels while its region shrinks by the same amount, with every
+    // row still fitting, passes (measured with the assertions recorded, not thrown: bottom bar 32.84 -> 40.84 px, code region 665 px, 30 rows
+    // still fit, every assertion of this block held). That is a permitted redistribution of the room, which this block does not treat as a
+    // squeezed or lost reading area; it does not measure movement.
+    const within = (actual: number | null | undefined, room: number | null | undefined, what: string) =>
+      assert.ok(typeof actual === 'number' && typeof room === 'number' && Math.abs(actual - room) <= 0.1, `${what}: ${actual} px, the room left for it is ${room} px`);
     const open = async (size: { width: number; height: number }, file: boolean) => {
       await freshPageAt({ ...size, scale: 1 });
       p().setDefaultTimeout(15_000);
@@ -2733,14 +2777,25 @@ test(
     near(wide.dialog.height, 956, '1600: the dialog (was 956)');
     near(wide.top?.height, 56.5, '1600: the title bar (was 56.5)');
     near(wide.overview?.height, 83.8, '1600: the overview (was 85.5)');
-    near(wide.body?.height, 781.4, '1600: the body (was 782.4 before Inter)');
     near(wide.diffHead?.height, 76.3, '1600: the file bar (was 78)');
     near(wide.treeTools?.height, 76.8, '1600: the search tools (was 78.6)');
-    near(wide.hints?.height, 32.4, '1600: the key hints (was 31.4 before Inter)');
-    near(wide.code?.rect?.height, 672.2, '1600: the code region (was 673.2 before Inter)');
-    assert.equal(wide.code?.clientHeight, 672, '1600: the visible code (was 673 before Inter)');
+    const hintsLine = wide.hintsLinePx ?? 0;
+    assert.ok(
+      wide.hints !== null && hintsLine > 0 && wide.hints.height > 0 && wide.hints.height < 2 * hintsLine && wide.hints.bottom <= wide.window.h + 0.5,
+      `1600: the key hints are one line whose bottom edge is inside the window (${wide.hints?.height} px tall, a line is ${hintsLine} px, bottom ${wide.hints?.bottom} of ${wide.window.h})`,
+    );
+    within(wide.allocation?.bodyHeight, wide.allocation?.bodyRoom, '1600: the body fills the room the dialog leaves it');
+    within(wide.code?.heightRaw, wide.code?.room, '1600: the code region fills the room its pane leaves it');
+    assert.ok(
+      wide.code !== null && wide.code.clientHeight >= 30 * wide.code.rowPx,
+      `1600: the visible code keeps room for 30 whole rows (${wide.code?.clientHeight} px, a row is ${wide.code?.rowPx} px)`,
+    );
     assert.equal(wide.code?.wholeRows, 30, '1600: the whole rows visible (was 30)');
-    near(wide.tree?.rect?.height, 704.5, '1600: the file tree (was 705.5 before Inter)');
+    within(wide.tree?.heightRaw, wide.tree?.room, '1600: the file tree fills the room its pane leaves it');
+    assert.ok(
+      wide.tree !== null && wide.tree.clientHeight >= 23 * wide.tree.rowPx,
+      `1600: the file tree keeps room for 23 whole rows (${wide.tree?.clientHeight} px, a row is ${wide.tree?.rowPx} px)`,
+    );
     assert.equal(wide.tree?.wholeRows, 23, '1600: the whole file rows visible (was 23)');
     // 390 x 844, a roomy phone: the regions fill the window as before and the dialog does not scroll
     const phone = await open({ width: 390, height: 844 }, true);

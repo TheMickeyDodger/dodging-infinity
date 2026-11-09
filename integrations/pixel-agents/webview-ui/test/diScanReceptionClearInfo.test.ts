@@ -210,3 +210,37 @@ test(
   },
   STEPS_MS,
 );
+
+test(
+  'CLEAR INFO BY KEYBOARD (browser): the control goes and focus lands on the Information heading, which is SEEN (never on the page)',
+  async () => {
+    await boot(stateWithInfo());
+    await openReceptionAll();
+    // PLAYWRIGHT API ONLY (this file is compiled WITHOUT the DOM lib: a page callback naming document or window fails tsc -b, which a browser green does not catch).
+    // SEEN = visible, its box inside the viewport, and a TRIAL click (an actionability check that does not click) finds that it would RECEIVE the pointer at its centre.
+    const seenBox = async (testid: string): Promise<boolean> => {
+      const target = p().locator(sel(testid));
+      if ((await target.count()) === 0 || !(await target.first().isVisible())) return false;
+      const box = await target.first().boundingBox();
+      const view = p().viewportSize();
+      if (box === null || view === null) return false;
+      if (!(box.width > 0 && box.height > 0 && box.x >= 0 && box.y >= 0 && box.x + box.width <= view.width && box.y + box.height <= view.height)) return false;
+      try {
+        await target.first().click({ trial: true, timeout: 1500 });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    assert.equal(await seenBox('di-reception-no-such-element'), false, 'the seen check says no to what is not there');
+    await p().locator(sel('di-reception-clear-info')).focus();
+    await p().keyboard.press('Enter');
+    await p().locator(sel('di-reception-clear-info')).waitFor({ state: 'detached' });
+    // where focus is now: the focused element's test id, or the page itself when nothing is focused (`:focus` never matches the body)
+    const focused = p().locator(':focus');
+    const landed = (await focused.count()) === 0 ? 'BODY' : ((await focused.first().getAttribute('data-testid')) ?? 'an element without a test id');
+    assert.equal(landed, 'di-reception-info-heading', `focus lands on the Information heading after Clear info removes itself (it landed on ${landed})`);
+    assert.equal(await seenBox('di-reception-info-heading'), true, 'the heading focus landed on is SEEN');
+  },
+  STEPS_MS,
+);

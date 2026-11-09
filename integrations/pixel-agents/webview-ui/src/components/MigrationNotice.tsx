@@ -8,6 +8,9 @@ export function MigrationNotice({ onDismiss }: MigrationNoticeProps) {
   return (
     <div
       className="absolute inset-0 bg-black/70 flex items-center justify-center z-100"
+      // K1: this notice covers the world and claims no front, so it states the covering contract (WorldMap.tsx reads it at the key, with its
+      // rendered box). It has no Escape of its own: with focus fallen to the body, Escape under it is a no-op, never a close of the unseen Map.
+      data-di-covers-world=""
       onClick={onDismiss}
     >
       <div

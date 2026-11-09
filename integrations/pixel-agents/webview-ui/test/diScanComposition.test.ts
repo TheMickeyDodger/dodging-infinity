@@ -41,8 +41,6 @@ const REF = JSON.parse(
   };
   derivedFontPx: Record<string, number>;
 };
-/** How far a box edge may sit from the reference's (image edges are read to about a pixel; borders are 1 to 3 px). */
-const TOLERANCE_PX = 4;
 
 let server: ViteDevServer | null = null;
 let browser: Browser | null = null;
@@ -217,62 +215,58 @@ test(
   STEPS_MS,
 );
 
+// CHANGED IN B2b (Q1: the ramp wins over pixel-lock 02, the Lead): this test held Mission details to pixel-lock 02's POSITIONS (Back, the pills, the
+// card, its foot rule, within 4 px of the reference at 1672 x 941) and to the reference's TYPE SCALE (56 px title, 24 px pills, 30 px headings). B
+// retires both: the type is DESIGN.md's ramp, and the composition is docked beside the list. What the composition still owes is kept, as
+// RELATIONSHIPS: the order (Back, title, pills, card), folded the card is sized by its line, its foot and its toggle (no reserved space), the foot inside
+// the card, the Swarm below it, the roster directly under its toggle; and every text at its ramp step.
+const RAMP: Record<string, number> = { breadcrumb: 12, title: 18, statusPill: 12, cardHeading: 14, body: 14, swarmHeading: 14, swarmName: 13 };
 test(
-  'V-3 above Swarm lines up with pixel-lock 02 at 1672x941 when the details are shown in full, at its type scale; folded, the card is sized by its line',
+  'V-3 (B2b, Q1) at 1672x941: Mission details keeps its ORDER and relationships, every text at its ramp step; folded, the card is sized by its line',
   async () => {
     const page = await open('mission');
-    const near = (got: number | undefined, want: number, what: string) =>
-      expect(
-        Math.abs((got ?? Number.NaN) - want),
-        `${what}: ${got} vs reference ${want}`,
-      ).toBeLessThanOrEqual(TOLERANCE_PX);
-    // FOLDED (A9.1): the Back button, the pills and the card's TOP are where the reference puts them; the card is sized by its one line, its toggle and its foot (no reserved space)
+    const stagePill = '[data-testid="di-scan-stage"] [data-testid="di-scan-pill"]';
+    // FOLDED (A9.1)
     await shot(page, 'composition-1672-01-folded');
-    near((await box(page, '[data-testid="di-scan-back"]'))?.top, REF.boxes.backButton.top, 'folded: Back top');
-    near((await box(page, '[data-testid="di-scan-details"]'))?.top, REF.boxes.detailsCard.top, 'folded: details card top');
+    const back0 = await box(page, '[data-testid="di-scan-back"]');
+    const title0 = await box(page, '[data-testid="di-scan-mission-title"]');
+    const pill0 = await box(page, stagePill);
     const folded = await box(page, '[data-testid="di-scan-details"]');
-    expect(folded!.bottom, 'folded: the card is shorter than the full-text frame').toBeLessThan(REF.boxes.detailsCard.bottom);
+    expect(back0!.bottom, 'Back is above the title').toBeLessThanOrEqual(title0!.top + 1);
+    expect(title0!.bottom, 'the title is above the pills').toBeLessThanOrEqual(pill0!.top + 1);
+    expect(pill0!.bottom, 'the pills are above the card').toBeLessThanOrEqual(folded!.top + 1);
     const toggle = await box(page, '[data-testid="di-scan-details-toggle"]');
     const foot = await box(page, '.di-scan-card-foot');
     expect(foot!.top - toggle!.bottom, 'folded: no reserved space between the toggle and the foot').toBeLessThanOrEqual(24);
     expect(foot!.bottom, 'folded: the card holds its foot').toBeLessThanOrEqual(folded!.bottom + 1);
     expect((await box(page, '.di-scan-swarm-heading'))!.top, 'folded: the Swarm starts below the card').toBeGreaterThanOrEqual(folded!.bottom);
-    // SHOWN IN FULL: the reference composition, as before
+    // SHOWN IN FULL
     await showInFull(page);
     await shot(page, 'composition-1672-02-shown-in-full');
-    const back = await box(page, '[data-testid="di-scan-back"]');
-    near(back?.top, REF.boxes.backButton.top, 'Back top');
-    near(back?.bottom, REF.boxes.backButton.bottom, 'Back bottom');
-    const pill = await box(page, '[data-testid="di-scan-pill"]');
-    near(pill?.top, REF.boxes.statusPills.top, 'status pills top');
-    near(pill?.bottom, REF.boxes.statusPills.bottom, 'status pills bottom');
     const card = await box(page, '[data-testid="di-scan-details"]');
-    near(card?.top, REF.boxes.detailsCard.top, 'details card top');
-    near(card?.bottom, REF.boxes.detailsCard.bottom, 'details card bottom');
     const rule = await box(page, '.di-scan-card-foot');
-    near(rule?.top, REF.boxes.detailsCardFootRule, 'details card footer rule');
-    // CHANGED (A9.2): the Swarm's summary line and its roster toggle now sit between the heading and the cards, so the cards' absolute top is no longer the reference's 660;
-    // what is held instead: the cards start directly under the toggle, and the Swarm heading still follows the card at the reference's own distance (card bottom 602 to cards 660,
-    // less the summary line and toggle the roster now follows)
+    expect(rule!.top, 'the foot rule is inside the card').toBeGreaterThanOrEqual(card!.top);
+    expect(rule!.bottom, 'the foot rule is inside the card').toBeLessThanOrEqual(card!.bottom + 1);
+    // CHANGED (A9.2), kept: the cards start directly under the roster toggle, and the Swarm heading follows the card
     const swarm = await box(page, '[data-testid="di-scan-swarm-member"]');
     const rosterToggle = await box(page, '[data-testid="di-scan-swarm-toggle"]');
     const heading = await box(page, '.di-scan-swarm-heading');
     expect(swarm!.top - rosterToggle!.bottom, 'the roster starts directly under its toggle').toBeGreaterThanOrEqual(0);
     expect(swarm!.top - rosterToggle!.bottom, 'the roster starts directly under its toggle').toBeLessThanOrEqual(24);
-    expect(heading!.top - card!.bottom, 'the Swarm heading follows the card as in the reference').toBeGreaterThanOrEqual(0);
-    expect(heading!.top - card!.bottom).toBeLessThanOrEqual(REF.boxes.swarmCards[0]!.top - REF.boxes.detailsCard.bottom);
-    // the type, at the reference's scale (Inter sizes whose glyphs match the reference's glyph heights)
+    // the Swarm heading's own top margin is 14 px (diScanPanel.css, kept, not forced by the ramp): the heading follows the card with no gap beyond it
+    expect(heading!.top - card!.bottom, 'the Swarm heading follows the card').toBeGreaterThanOrEqual(0);
+    expect(heading!.top - card!.bottom, 'the Swarm heading follows the card by its own margin, no more').toBeLessThanOrEqual(14 + 1);
+    // the type, at the RAMP's step for each role (b2b-record.md, section 3)
     const sizes: Array<[string, string]> = [
       ['.di-scan-crumb', 'breadcrumb'],
       ['[data-testid="di-scan-mission-title"]', 'title'],
-      ['[data-testid="di-scan-pill"]', 'statusPill'],
+      [stagePill, 'statusPill'],
       ['#di-scan-details-heading', 'cardHeading'],
       ['.di-scan-card p', 'body'],
       ['.di-scan-swarm-heading', 'swarmHeading'],
       ['.di-scan-card-copy .di-scan-name', 'swarmName'],
     ];
-    for (const [selector, key] of sizes)
-      expect(await fontPx(page, selector), `${key} font size`).toBe(REF.derivedFontPx[key]);
+    for (const [selector, key] of sizes) expect(await fontPx(page, selector), `${key} font size`).toBe(RAMP[key]);
     await page.close();
   },
   STEPS_MS,
@@ -289,9 +283,9 @@ test(
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
+    // CHANGED IN B2b (Q1): the compact pixel-lock scale (about 0.72 of 02's) is retired for type; the title is the ramp's title step at every width
     const title = await fontPx(page, '[data-testid="di-scan-mission-title"]');
-    expect(title).toBeLessThan(REF.derivedFontPx.title!);
-    expect(title).toBeGreaterThanOrEqual(32);
+    expect(title).toBe(18);
     // CHANGED (A9.2): the Swarm leads with its summary line on the first screen; its cards are measured shown (a hidden card's box is 0, which would pass for nothing)
     expect((await box(page, '[data-testid="di-scan-swarm-status"]'))!.top, 'the Swarm summary is on the first screen').toBeLessThan(720);
     await page.click('[data-testid="di-scan-swarm-toggle"]');
@@ -318,6 +312,7 @@ test(
       const bar = r('[data-testid="di-scan-statusbar"]');
       const tree = r('.di-scan-tree');
       const stage = r('[data-testid="di-scan-stage"]');
+      const stageRight = stage.right;
       const head = document.querySelector('.di-scan-gutter-head')!;
       // the hunk header's TEXT position (a range), not its box: a right-aligned text sits in a box that starts at the column
       const range = document.createRange();
@@ -330,6 +325,7 @@ test(
       return {
         bar: { left: bar.left, right: bar.right, top: bar.top },
         stageLeft: stage.left,
+        stageRight,
         treeBottom: tree.bottom,
         hunkLeft: hunk.left,
         codeLeft: codeCol.left,
@@ -342,7 +338,8 @@ test(
     });
     // the status bar spans the whole Mission content (from the rail's edge), and the tree ends where it starts
     expect(Math.abs(geo.bar.left - geo.stageLeft)).toBeLessThanOrEqual(1);
-    expect(geo.bar.right).toBe(1672);
+    // CHANGED IN B2b (Q9): "the whole Mission content" ends at the STAGE's right edge; at 1672 (two panes) that is the list dock's edge, not the window's
+    expect(Math.abs(geo.bar.right - geo.stageRight)).toBeLessThanOrEqual(1);
     expect(Math.abs(geo.treeBottom - geo.bar.top)).toBeLessThanOrEqual(1);
     // the first hunk header starts the code column, beside Old and New (never pushed to the far right)
     expect(geo.hunkLeft - geo.codeLeft).toBeGreaterThanOrEqual(0);

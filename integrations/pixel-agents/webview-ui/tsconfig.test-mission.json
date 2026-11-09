@@ -14,9 +14,16 @@
        answer (server/src/di/codeReview.ts, whose types reach catalogProjection.ts).
        The Herdr line browser test is here for the same reason: it IMPORTS the office's own Herdr replies (server/src/di/herdrRequests.ts, whose relay
        class declares parameter properties), so the reasons it checks are the server's own words, never a copy.
-       The relaxation is therefore confined to this single project and these four tests. */
+       B2c's More actions browser test is here for the same reason: it IMPORTS the office's own Herdr replies (server/src/di/herdrRequests.ts).
+       The relaxation is therefore confined to this single project and these five tests. */
     "erasableSyntaxOnly": false
   },
-  "include": ["test/diMissionRequest.test.ts", "test/diMissionDeliveryComposition.test.ts", "test/diCodeReviewUnadmitted.test.ts", "test/diScanHerdrLineBrowser.test.ts"],
+  "include": [
+    "test/diMissionRequest.test.ts",
+    "test/diMissionDeliveryComposition.test.ts",
+    "test/diCodeReviewUnadmitted.test.ts",
+    "test/diScanHerdrLineBrowser.test.ts",
+    "test/diScanB2cMoreActionsBrowser.test.ts"
+  ],
   "exclude": []
 }

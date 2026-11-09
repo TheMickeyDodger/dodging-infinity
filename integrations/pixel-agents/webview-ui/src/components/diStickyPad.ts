@@ -9,7 +9,12 @@
 import type { RefObject } from 'react';
 import { useEffect } from 'react';
 
-/** Reserve the height of `noteRef` (while it is position: sticky) as scroll-padding-top on `scrollerRef`. Inactive: nothing is reserved. */
+/**
+ * Reserve the strip `noteRef` covers while it is position: sticky (its sticky offset, `top`, plus its height: a note stuck BELOW another sticky strip, as the
+ * scan stage's page head is below fixture mode's label, covers both) as scroll-padding-top on `scrollerRef`. Inactive: nothing is reserved.
+ * Re-measured when the strip RESIZES and when the scroller's OWN children change: the offset can change with no change of size, through the cascade, when
+ * a strip mounts or leaves beside it (B2e R22: fixture mode's label mounting before a scan page moves its head's top from 0 to 30px).
+ */
 export function useStickyScrollPad(
   noteRef: RefObject<HTMLElement | null>,
   scrollerRef: RefObject<HTMLElement | null>,
@@ -20,16 +25,21 @@ export function useStickyScrollPad(
     const scroller = scrollerRef.current;
     if (!active || !note || !scroller) return;
     const apply = () => {
-      const sticky = getComputedStyle(note).position === 'sticky';
+      const style = getComputedStyle(note);
+      const sticky = style.position === 'sticky';
+      const offset = Math.max(0, parseFloat(style.top) || 0);
       scroller.style.scrollPaddingTop = sticky
-        ? `${Math.ceil(note.getBoundingClientRect().height)}px`
+        ? `${Math.ceil(offset + note.getBoundingClientRect().height)}px`
         : '';
     };
     apply();
     const observer = new ResizeObserver(apply);
     observer.observe(note);
+    const children = new MutationObserver(apply);
+    children.observe(scroller, { childList: true });
     return () => {
       observer.disconnect();
+      children.disconnect();
       scroller.style.scrollPaddingTop = '';
     };
   }, [noteRef, scrollerRef, active]);
@@ -50,16 +60,18 @@ export function useScanFaceInsets(
   noteRef: RefObject<HTMLElement | null>,
   active: boolean,
   fixtureNote: boolean,
+  /** B3: the minimized-surface strip's element (App provides it through the tray context): it starts below the fixture label too, as the rail and the screen do. */
+  tray: HTMLElement | null = null,
 ): void {
   useEffect(() => {
     const panel = panelRef.current;
     if (!active || !panel) return;
     const apply = () => {
       const note = noteRef.current;
-      panel.style.setProperty(
-        '--scan-fixture-inset',
-        fixtureNote && note ? `${Math.ceil(note.getBoundingClientRect().height)}px` : '0px',
-      );
+      const inset = fixtureNote && note ? `${Math.ceil(note.getBoundingClientRect().height)}px` : '0px';
+      panel.style.setProperty('--scan-fixture-inset', inset);
+      // the strip is outside this panel, so it takes the same measured height on its own element (diOperationalPanel.css: top)
+      tray?.style.setProperty('--scan-tray-top', inset);
       const rail = panel.querySelector('.di-rail');
       const overlap = rail ? rail.getBoundingClientRect().right - panel.getBoundingClientRect().left : 0;
       panel.style.setProperty('--scan-rail-overlap', `${Math.max(0, Math.ceil(overlap))}px`);
@@ -74,6 +86,7 @@ export function useScanFaceInsets(
       window.removeEventListener('resize', apply);
       panel.style.removeProperty('--scan-fixture-inset');
       panel.style.removeProperty('--scan-rail-overlap');
+      tray?.style.removeProperty('--scan-tray-top');
     };
-  }, [panelRef, noteRef, active, fixtureNote]);
+  }, [panelRef, noteRef, active, fixtureNote, tray]);
 }

@@ -568,6 +568,241 @@ async function pressKey(page: Page, sel: string, key: string) {
   await page.focus(sel);
   await page.keyboard.press(key);
 }
+/** B3 1B: Wider reading and Minimize are items of the workspace's Options menu. The person's route to them: the trigger, then the item. */
+async function openOptionsMenu(page: Page) {
+  if (!(await exists(page, T('di-mr-options-popover')))) {
+    await page.click(T('di-mr-options'));
+    await page.waitForSelector(T('di-mr-options-popover'), { timeout: 5_000 });
+  }
+}
+async function clickMinimize(page: Page) {
+  await openOptionsMenu(page);
+  await page.click(T('di-mr-minimize'));
+}
+async function clickWide(page: Page) {
+  await openOptionsMenu(page);
+  await page.click(T('di-mr-wide'));
+}
+/** The reading-width item is an ACTION named for what it does (F5): it exists only while the menu is open, so it is READ by opening the menu and closing it with Escape (which the menu consumes). */
+async function wideItem(page: Page) {
+  await openOptionsMenu(page);
+  const label = ((await page.textContent(T('di-mr-wide'))) ?? '').trim();
+  const pressed = await page.getAttribute(T('di-mr-wide'), 'aria-pressed');
+  await page.keyboard.press('Escape');
+  return { label, pressed };
+}
+
+// ---- B3 1B, Supervisor ruling R2 (2026-11-08): restore scroll and focus ----
+// SEEN helper v2, verbatim from the shared B3 helper (calibrated below, in this page, before it is relied on).
+interface SeenInfo {
+  seen: boolean;
+  why: string[];
+  width: number;
+  height: number;
+}
+const seenIn = (selector: string): SeenInfo => {
+  const el = document.querySelector<HTMLElement>(selector);
+  if (el === null) return { seen: false, why: ['absent'], width: 0, height: 0 };
+  const why: string[] = [];
+  const cs = getComputedStyle(el);
+  if (cs.display === 'none') why.push('display:none');
+  if (cs.visibility !== 'visible') why.push(`visibility:${cs.visibility}`);
+  if (Number(cs.opacity) === 0) why.push('opacity:0');
+  if (cs.clipPath !== 'none') why.push(`clip-path:${cs.clipPath}`);
+  const r = el.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) why.push(`no box (${r.width.toFixed(1)}x${r.height.toFixed(1)})`);
+  if (r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight) why.push('outside the window');
+  const escapes = (a: Element) => {
+    const c = getComputedStyle(a);
+    return c.transform !== 'none' || c.filter !== 'none' || c.perspective !== 'none' || /paint|layout|strict|content/.test(c.contain) || c.willChange.includes('transform');
+  };
+  /** The box that bounds this element's painting: the viewport for a fixed element (unless a transformed ancestor holds it), the nearest positioned ancestor for an absolute one, else the parent. */
+  const containingBlock = (node: Element): Element | null => {
+    const pos = getComputedStyle(node).position;
+    let a = node.parentElement;
+    if (pos === 'fixed') {
+      while (a !== null && !escapes(a)) a = a.parentElement;
+      return a;
+    }
+    if (pos === 'absolute') {
+      while (a !== null && getComputedStyle(a).position === 'static' && !escapes(a)) a = a.parentElement;
+      return a;
+    }
+    return a;
+  };
+  for (let a = containingBlock(el); a !== null; a = containingBlock(a)) {
+    const s = getComputedStyle(a);
+    if (s.overflowX === 'visible' && s.overflowY === 'visible' && s.clipPath === 'none') continue;
+    const ar = a.getBoundingClientRect();
+    const ix = Math.min(r.right, ar.right) - Math.max(r.left, ar.left);
+    const iy = Math.min(r.bottom, ar.bottom) - Math.max(r.top, ar.top);
+    if (ix < r.width - 0.5 || iy < r.height - 0.5) why.push(`clipped by ${a.getAttribute('data-testid') ?? (typeof a.className === 'string' ? a.className.split(' ')[0] : a.tagName)}`);
+  }
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const points: Array<[number, number]> = [
+    [cx, cy],
+    [r.left + 2, cy],
+    [r.right - 2, cy],
+    [cx, r.top + 2],
+    [cx, r.bottom - 2],
+  ];
+  for (const [x, y] of points) {
+    if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+    const top = document.elementFromPoint(x, y);
+    if (top === null || !(top === el || el.contains(top))) {
+      why.push(`covered at ${Math.round(x)},${Math.round(y)} by ${top?.getAttribute('data-testid') ?? top?.tagName ?? 'nothing'}`);
+      break;
+    }
+  }
+  return { seen: why.length === 0, why, width: r.width, height: r.height };
+};
+/** The box of a focus target and the box of the scroller at the instant BEFORE focus() is called on it (the page's own recorder, installed once): the RESTORED layout at the KEPT scroll, before any reveal. */
+interface FocusGeometry {
+  id: string | null;
+  scrollTop: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+  scrollerTop: number;
+  scrollerBottom: number;
+  clientHeight: number;
+  scrollHeight: number;
+  windowHeight: number;
+}
+/**
+ * THE R2 ORACLE: where the scroll must be after a restore, from GEOMETRY ALONE. The visible area is the scroller's box clipped to the window.
+ * A target wholly inside it must not move the scroll at all; a target above it moves the scroll up by the part that is above, one below it moves
+ * the scroll down by the part that is below ('nearest', the MINIMUM that shows it). Never the resulting scrollTop, never a hardcoded value.
+ */
+function minimumReveal(g: FocusGeometry) {
+  const visibleTop = Math.max(g.scrollerTop, 0);
+  const visibleBottom = Math.min(g.scrollerBottom, g.windowHeight);
+  const movement =
+    g.top < visibleTop ? g.top - visibleTop : g.bottom > visibleBottom ? g.bottom - visibleBottom : 0;
+  const expected = Math.min(Math.max(g.scrollTop + movement, 0), g.scrollHeight - g.clientHeight);
+  return { movement, expected, exposed: movement === 0, fits: g.height <= visibleBottom - visibleTop };
+}
+/** What is wrong with an observed scroll, from the geometry (empty = right). The assertions AND the negative controls both go through this one function. */
+function judgeReveal(g: FocusGeometry, observed: number): string[] {
+  const wrong: string[] = [];
+  if (!(g.width > 0 && g.height > 0)) {
+    wrong.push(`HIDDEN BOX: ${g.width} x ${g.height} is not the restored layout`);
+  }
+  const want = minimumReveal(g);
+  if (!want.fits) wrong.push('the target is taller than the visible area: a minimum reveal is not defined');
+  if (want.exposed) {
+    // Nothing has to move, so nothing may: no rounding allowance.
+    if (observed !== want.expected) {
+      wrong.push(`MOVED: the target was already fully visible at the kept scroll ${g.scrollTop}, the scroll went to ${observed}`);
+    }
+  } else {
+    // Native rounding only: box edges are fractional, scrollTop is an integer.
+    if (observed < want.expected - 1) {
+      wrong.push(`UNDER-scroll: ${observed}; the minimum that shows the target is ${want.expected} (kept ${g.scrollTop}, movement ${want.movement})`);
+    }
+    if (observed > want.expected + 1) {
+      wrong.push(`OVER-scroll: ${observed}; the minimum that shows the target is ${want.expected} (kept ${g.scrollTop}, movement ${want.movement})`);
+    }
+  }
+  return wrong;
+}
+async function installFocusRecorder(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __focusGeometry: FocusGeometry[] };
+    w.__focusGeometry = [];
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'focus')?.value as (
+      this: HTMLElement,
+      options?: FocusOptions,
+    ) => void;
+    HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+      const body = document.querySelector<HTMLElement>('[data-testid="di-mr-body"]');
+      const box = this.getBoundingClientRect();
+      const scroller = body?.getBoundingClientRect();
+      w.__focusGeometry.push({
+        id: this.getAttribute('data-testid'),
+        scrollTop: body?.scrollTop ?? Number.NaN,
+        top: box.top,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+        scrollerTop: scroller?.top ?? Number.NaN,
+        scrollerBottom: scroller?.bottom ?? Number.NaN,
+        clientHeight: body?.clientHeight ?? Number.NaN,
+        scrollHeight: body?.scrollHeight ?? Number.NaN,
+        windowHeight: window.innerHeight,
+      });
+      original.call(this, options);
+    };
+  });
+}
+async function resetFocusRecorder(page: Page) {
+  await page.evaluate(() => {
+    (window as unknown as { __focusGeometry: FocusGeometry[] }).__focusGeometry = [];
+  });
+}
+/** The LAST focus() on `id` since the reset (the restore's own) and the geometry read before it. */
+async function geometryBeforeFocus(page: Page, id: string): Promise<FocusGeometry> {
+  const all = await page.evaluate(
+    () => (window as unknown as { __focusGeometry: FocusGeometry[] }).__focusGeometry,
+  );
+  const mine = all.filter((g) => g.id === id);
+  expect(
+    mine.length,
+    `the restore called focus() on ${id}; calls since the reset: ${JSON.stringify(all.map((g) => g.id))}`,
+  ).toBeGreaterThan(0);
+  return mine[mine.length - 1] as FocusGeometry;
+}
+/** The helper must be able to say NO before its yes means anything: yes to a plain control, no to a clipped one, a covered one and a 1px-hidden one. */
+async function calibrateSeen(page: Page) {
+  await page.evaluate(() => {
+    const host = document.createElement('div');
+    host.id = 'b3-seen-calibration';
+    host.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483000';
+    host.innerHTML =
+      '<button data-seencal="plain" style="display:block;width:120px;height:28px">v</button>' +
+      '<div style="width:20px;height:20px;overflow:hidden;position:relative"><button data-seencal="clipped" style="position:absolute;left:60px;top:0;width:80px;height:20px">c</button></div>' +
+      '<button data-seencal="covered" style="display:block;width:120px;height:28px">cov</button>' +
+      '<button data-seencal="hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">h</button>';
+    document.body.appendChild(host);
+    const r3 = document.querySelector('[data-seencal="covered"]')?.getBoundingClientRect();
+    if (r3 === undefined) return;
+    const cover = document.createElement('div');
+    cover.id = 'b3-seen-calibration-cover';
+    cover.style.cssText = `position:fixed;left:${r3.left - 2}px;top:${r3.top - 2}px;width:${r3.width + 4}px;height:${r3.height + 4}px;z-index:2147483647`;
+    document.body.appendChild(cover);
+  });
+  const verdicts = {
+    visible: (await page.evaluate(seenIn, '[data-seencal="plain"]')).seen,
+    clipped: (await page.evaluate(seenIn, '[data-seencal="clipped"]')).seen,
+    covered: (await page.evaluate(seenIn, '[data-seencal="covered"]')).seen,
+    hidden: (await page.evaluate(seenIn, '[data-seencal="hidden"]')).seen,
+  };
+  await page.evaluate(() => {
+    document.getElementById('b3-seen-calibration')?.remove();
+    document.getElementById('b3-seen-calibration-cover')?.remove();
+  });
+  expect(
+    verdicts,
+    'the SEEN helper says yes to a plain control and no to a clipped one, a covered one and a 1px-hidden one',
+  ).toEqual({ visible: true, clipped: false, covered: false, hidden: false });
+}
+/** The restored focus target is the RIGHT element (identity) AND is SEEN: what is wrong with either, so a red run reports BOTH. Identity alone passed a restore that left focus 1289px below the visible area. */
+async function restoredTargetProblems(page: Page, id: string, where: string): Promise<string[]> {
+  const problems: string[] = [];
+  const active = await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null);
+  if (active !== id) problems.push(`${where}: focus is on ${String(active)}, not on ${id} (identity)`);
+  const info = await page.evaluate(seenIn, `[data-testid="${id}"]`);
+  if (!info.seen) problems.push(`${where}: ${id} is NOT SEEN (${info.why.join('; ')})`);
+  return problems;
+}
+/** Every field whose value differs, so the state equality stays a FULL comparison and a red run names each field. */
+function differences(got: Record<string, unknown>, want: Record<string, unknown>): string[] {
+  return Object.keys({ ...want, ...got })
+    .filter((k) => JSON.stringify(got[k]) !== JSON.stringify(want[k]))
+    .map((k) => `${k}: got ${JSON.stringify(got[k])}, wanted ${JSON.stringify(want[k])}`);
+}
 async function whenText(page: Page, sel: string, pattern: RegExp, ms = 30_000) {
   await page.waitForFunction(
     ([s, source, flags]) => {
@@ -1279,12 +1514,19 @@ test(
 
     // wider reading
     const docked = await page.$eval(T('di-mr'), (el) => el.getBoundingClientRect().width);
-    await pressKey(page, T('di-mr-wide'), 'Enter');
+    // B3 1B: by keyboard through the Options menu: the trigger, Enter (the menu opens with Wider reading focused), Enter (it switches the mode and closes the menu)
+    await pressKey(page, T('di-mr-options'), 'Enter');
+    await page.waitForSelector(T('di-mr-options-popover'), { timeout: 5_000 });
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-testid')),
+      'the Options menu opens on Wider reading',
+    ).toBe('di-mr-wide');
+    await page.keyboard.press('Enter');
     await waitFor(
       'the wider reading mode',
       async () => (await page.getAttribute(T('di-mr'), 'data-wide')) === 'true',
     );
-    expect(await page.getAttribute(T('di-mr-wide'), 'aria-pressed')).toBe('true');
+    expect(await wideItem(page), 'the item names the action that undoes the wider reading, and is not a toggle').toEqual({ label: 'Narrower reading', pressed: null });
     const wide = await page.$eval(T('di-mr'), (el) => el.getBoundingClientRect().width);
     expect(wide, 'wider reading did not widen the pane').toBeGreaterThan(docked);
     expect(
@@ -1357,7 +1599,7 @@ test(
       const w = window.innerWidth;
       return [
         'di-mr-heading',
-        'di-mr-wide',
+        'di-mr-options',
         'di-mr-close',
         'di-mr-tab-ask',
         'di-mr-tab-requests',
@@ -1388,9 +1630,19 @@ test(
 
     // Hiding the sidebar while the workspace is open takes its opener away. Escape then returns focus to the control that shows the
     // sidebar again (visible, and named for what it does), never to <body>.
+    // D1b (introduced compatibility update): a request is picked here (the submitted draft), and Escape peels ONE layer per press, so the
+    // FIRST Escape puts the request back in the list (focus on its row, the workspace stays) and the SECOND closes the workspace; the close-time
+    // focus this test pins is unchanged.
     await page.click('[data-testid="di-office-panel-minimize"]');
     await page.waitForSelector(T('di-office-panel-collapsed'));
     await page.focus(T('di-mr-heading'));
+    await page.keyboard.press('Escape');
+    await page.waitForSelector(T('di-mr-detail'), { state: 'detached', timeout: 5_000 });
+    expect(await exists(page, T('di-mr')), 'the first Escape keeps the workspace open').toBe(true);
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? ''),
+      'the first Escape puts focus on the request row it put back',
+    ).toMatch(/^di-mr-request-/);
     await page.keyboard.press('Escape');
     await page.waitForSelector(T('di-mr'), { state: 'detached' });
     expect(
@@ -1446,6 +1698,8 @@ test(
   async () => {
     const page = await openWindow();
     await openWorkspace(page);
+    await installFocusRecorder(page);
+    await calibrateSeen(page);
     // AC7: no em or en dash in what the Ask tab renders with a conversation on it.
     await ask(page, 'make the readiness probe stable', 'The readiness probe.');
     // (AC7 covers the copy WE author; what a person or the assistant wrote is content, kept as received.)
@@ -1500,12 +1754,20 @@ test(
      * through the workspace scrolls it, so the position is set last and not by the person's tabbing).
      */
     const leaveAndMinimize = async (switchWide: boolean) => {
-      await page.focus(T('di-mr-wide'));
-      if (switchWide) await page.keyboard.press('Enter');
+      // B3 1B: the real keyboard path through the Options menu: the trigger, Enter (the menu opens on Wider reading); when the mode is to be switched, Enter switches it and closes the menu and Enter opens it again; Tab reaches Minimize
+      await page.focus(T('di-mr-options'));
+      await page.keyboard.press('Enter');
+      await page.waitForSelector(T('di-mr-options-popover'), { timeout: 5_000 });
+      if (switchWide) {
+        await page.keyboard.press('Enter');
+        await page.focus(T('di-mr-options'));
+        await page.keyboard.press('Enter');
+        await page.waitForSelector(T('di-mr-options-popover'), { timeout: 5_000 });
+      }
       await page.keyboard.press('Tab');
       expect(
         await page.evaluate(() => document.activeElement?.getAttribute('data-testid')),
-        'Tab from "Wider reading" reaches Minimize',
+        'Tab from "Wider reading" in the Options menu reaches Minimize',
       ).toBe('di-mr-minimize');
       await page.$eval(
         T('di-mr-fixture-details'),
@@ -1540,15 +1802,42 @@ test(
       return atHide;
     };
     /** Restored exactly as left, with focus back on the control the person was working in (never the toggle or the page). */
-    const asLeft = (atHide: Awaited<ReturnType<typeof kept>>) => ({
+    const asLeft = (atHide: Awaited<ReturnType<typeof kept>>, scroll: number) => ({
       ...atHide,
+      // B3 1B (R2): the scroll is NOT frozen at the value it had at hide; it is judged by the geometry oracle (checkRestore), which stays in the assertion with its own rounding allowance
+      scroll,
       shown: true,
       inDom: true,
-      focus: 'di-mr-wide',
+      // B3 1B: the control the person LAST WORKED IN is the word field they filled (the Options wrapper is excluded from last-content tracking, so neither the menu item that is gone nor the trigger is where focus returns), asserted by identity
+      focus: 'di-mr-word',
     });
 
+    /**
+     * Restore returns focus to the control the person LAST worked in, SHOWS it, and gives the kept scroll back first; the view moves only as far as
+     * the target needs (not at all when it is already fully visible). Geometry is read by the page's recorder BEFORE the focus, in the restored layout.
+     * Everything that disagrees is COLLECTED, across ALL THREE restores of this test, and asserted once after the last (the exposed cell), so a red run reports every
+     * one (the state fields, the scroll, identity and seen) and reaches every cell: a test that dies at its first restore proves only what it reached.
+     */
+    const r2Problems: string[] = [];
+    const checkRestore = async (atHide: Awaited<ReturnType<typeof kept>>, where: string) => {
+      const g = await geometryBeforeFocus(page, 'di-mr-word');
+      expect(g.scrollTop, `${where}: the kept scroll is given back before focus moves`).toBe(atHide.scroll);
+      const restored = await kept();
+      const problems = [
+        ...differences(restored, asLeft(atHide, restored.scroll ?? Number.NaN)).map((d) => `${where}: not as it was left, ${d}`),
+        ...judgeReveal(g, restored.scroll ?? Number.NaN).map((w) => `${where}: scroll, ${w}`),
+        ...(await restoredTargetProblems(page, 'di-mr-word', where)),
+      ];
+      r2Problems.push(
+        ...problems.map((p) => `${p} [box ${g.top.toFixed(1)} to ${g.bottom.toFixed(1)} in the scroller ${g.scrollerTop.toFixed(1)} to ${g.scrollerBottom.toFixed(1)} at the kept scroll ${g.scrollTop}; the scroll after the restore is ${restored.scroll}]`),
+      );
+      return { g, restored };
+    };
+
     await page.fill(T('di-mr-word'), WORD);
+    await openOptionsMenu(page);
     expect(await exists(page, T('di-mr-minimize')), 'the workspace offers Minimize').toBe(true);
+    await page.keyboard.press('Escape');
     const atHide = await leaveAndMinimize(true);
     const minimized = await kept();
     expect(minimized.inDom, 'minimized, the workspace is kept in the page').toBe(true);
@@ -1595,21 +1884,107 @@ test(
     await page.fill(T('di-find-input'), '');
 
     // Restore, by keyboard, from the restore control.
+    await resetFocusRecorder(page);
     await pressKey(page, T('di-mr-restore'), 'Enter');
     await page.waitForSelector(T('di-mr-restore'), { state: 'detached', timeout: 5_000 });
-    expect(await kept(), 'restore gives back the workspace exactly as it was left').toEqual(
-      asLeft(atHide),
-    );
+    const first = await checkRestore(atHide, 'restore from the restore control');
+    {
+      // NEGATIVE CONTROLS, both ways: the SAME judge, on this restore's own geometry, must REJECT a scroll that is too small (the withdrawn R3
+      // boundary: the kept scroll re-applied after the focus), one that is a little too small, one that is too large and one that is a little too large.
+      const { g } = first;
+      const want = minimumReveal(g);
+      expect(want.exposed, 'control precondition: in this state the target is NOT visible at the kept scroll, a reveal is owed').toBe(false);
+      expect(want.movement, 'control precondition: the reveal is a real distance').toBeGreaterThan(50);
+      const maxScroll = g.scrollHeight - g.clientHeight;
+      expect(judgeReveal(g, g.scrollTop).join(' | '), 'UNDER-scroll control: the kept scroll (R3, focus left where nobody sees it) is rejected').toContain('UNDER-scroll');
+      expect(judgeReveal(g, want.expected - 3).join(' | '), 'UNDER-scroll control: 3px short is rejected').toContain('UNDER-scroll');
+      expect(want.expected + 300, 'control precondition: there is room to over-scroll by 300').toBeLessThan(maxScroll);
+      expect(judgeReveal(g, want.expected + 300).join(' | '), 'OVER-scroll control: 300px past the minimum is rejected').toContain('OVER-scroll');
+      expect(judgeReveal(g, want.expected + 3).join(' | '), 'OVER-scroll control: 3px past the minimum is rejected').toContain('OVER-scroll');
+      expect(judgeReveal({ ...g, width: 0, height: 0 }, want.expected).join(' | '), 'HIDDEN-BOX control: a degenerate box is not accepted as geometry').toContain('HIDDEN BOX');
+      // ...and on the REAL PAGE, with the real element: at the kept scroll the focused element's IDENTITY is unchanged and it is NOT SEEN (identity alone passes the state R3 left);
+      // at a 300px over-scroll it IS seen and the judge still rejects it (seen alone would pass an over-scroll).
+      const setScroll = async (to: number) =>
+        page.$eval(T('di-mr-body'), (el, v) => { el.scrollTop = v; return el.scrollTop; }, to);
+      expect(await setScroll(g.scrollTop)).toBe(g.scrollTop);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null), 'REAL-PAGE control: at the kept scroll the identity is still the word field').toBe('di-mr-word');
+      const hiddenAtKept = await page.evaluate(seenIn, T('di-mr-word'));
+      expect(hiddenAtKept.seen, `REAL-PAGE control: at the kept scroll the word field is NOT seen (${hiddenAtKept.why.join('; ')})`).toBe(false);
+      const over = await setScroll(want.expected + 300);
+      expect((await page.evaluate(seenIn, T('di-mr-word'))).seen, 'REAL-PAGE control: over-scrolled, the word field is still seen').toBe(true);
+      expect(judgeReveal(g, over).join(' | '), 'REAL-PAGE control: over-scrolled by 300 the judge rejects it although it is seen').toContain('OVER-scroll');
+      await setScroll(first.restored.scroll ?? 0);
+      expect(await kept(), 'the controls left the restored workspace as it was').toEqual(first.restored);
+    }
 
     // An entrance used while minimized restores the same workspace too.
     const again = await leaveAndMinimize(false);
+    await resetFocusRecorder(page);
     await page.click(T('di-mr-open-requests'));
     await page.waitForSelector(T('di-mr-restore'), { state: 'detached', timeout: 5_000 });
-    expect(await kept(), 'the entrance restores the workspace as it was left').toEqual(
-      asLeft(again),
-    );
+    await checkRestore(again, 'the entrance restore');
+
+    // THE COMPLEMENT, which keeps R2 honest (it must not scroll every time): the person worked in the word field and it is fully visible at the kept scroll.
+    // The restore must then move NOTHING, to the pixel. The field is put near the middle of the scroller (a clear margin, not an edge: the restored layout can differ a little),
+    // and the cell proves from the geometry read before the focus that the case it claims was reached.
+    {
+      const placed = await page.evaluate(() => {
+        const body = document.querySelector<HTMLElement>('[data-testid="di-mr-body"]');
+        const word = document.querySelector<HTMLElement>('[data-testid="di-mr-word"]');
+        if (body === null || word === null) return null;
+        const b = body.getBoundingClientRect();
+        const w = word.getBoundingClientRect();
+        body.scrollTop += w.top + w.height / 2 - (b.top + b.height / 2);
+        return body.scrollTop;
+      });
+      expect(placed, 'the exposed cell can place the word field in the scroller').not.toBeNull();
+      await openOptionsMenu(page);
+      const exposedAtHide = await kept();
+      await page.click(T('di-mr-minimize'));
+      await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
+      await resetFocusRecorder(page);
+      await pressKey(page, T('di-mr-restore'), 'Enter');
+      await page.waitForSelector(T('di-mr-restore'), { state: 'detached', timeout: 5_000 });
+      const g = await geometryBeforeFocus(page, 'di-mr-word');
+      expect(minimumReveal(g).exposed, `SETUP: the target is already fully visible in the restored layout at the kept scroll (box ${g.top.toFixed(1)} to ${g.bottom.toFixed(1)} in ${g.scrollerTop.toFixed(1)} to ${g.scrollerBottom.toFixed(1)}), so this cell reaches the case it claims`).toBe(true);
+      expect(g.scrollTop, 'the kept scroll is given back before focus moves').toBe(exposedAtHide.scroll);
+      const restored = await kept();
+      const problems = [
+        ...(restored.scroll === exposedAtHide.scroll ? [] : [`EXACT: the target was already visible, yet the scroll went from ${exposedAtHide.scroll} to ${restored.scroll}`]),
+        ...differences(restored, asLeft(exposedAtHide, exposedAtHide.scroll ?? Number.NaN)).map((d) => `not as it was left, ${d}`),
+        ...judgeReveal(g, restored.scroll ?? Number.NaN).map((w) => `scroll, ${w}`),
+        ...(await restoredTargetProblems(page, 'di-mr-word', 'the exposed restore')),
+      ];
+      r2Problems.push(...problems.map((p) => `the exposed restore: ${p}`));
+      // negative controls for THIS case: any movement at all is rejected
+      expect(judgeReveal(g, (exposedAtHide.scroll ?? 0) + 1).join(' | '), 'MOVED control: 1px down is rejected').toContain('MOVED');
+      expect(judgeReveal(g, (exposedAtHide.scroll ?? 0) - 1).join(' | '), 'MOVED control: 1px up is rejected').toContain('MOVED');
+    }
+    expect(
+      r2Problems,
+      'every restore (the keyboard restore, the entrance restore and the already-visible restore): every field is as it was left, the scroll moves only by the minimum that shows the target (nothing at all when it is already visible), and focus is on the word field AND seen',
+    ).toEqual([]);
 
     // Escape still closes the restored workspace; nothing was decided along the way.
+    // D1b (introduced compatibility update): Escape peels ONE layer per press. The restored workspace has a request picked with a word typed for
+    // it, so the FIRST Escape puts the request back in the list (focus on its row; the word stays WITH the request and comes back when it is picked
+    // again), and only then does Escape close the workspace.
+    await page.keyboard.press('Escape');
+    await page.waitForSelector(T('di-mr-detail'), { state: 'detached', timeout: 5_000 });
+    expect(await exists(page, T('di-mr')), 'the first Escape keeps the restored workspace open').toBe(true);
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null),
+      'the first Escape puts focus on the request row it put back',
+    ).toBe(`di-mr-request-${ref}`);
+    await page.click(T(`di-mr-request-${ref}`));
+    await page.waitForSelector(T('di-mr-word'), { timeout: 10_000 });
+    expect(
+      await page.$eval(T('di-mr-word'), (el) => (el as HTMLInputElement).value),
+      'picking the request again gives back the word typed for it, exactly',
+    ).toBe(WORD);
+    await page.focus(T('di-mr-heading'));
+    await page.keyboard.press('Escape');
+    await page.waitForSelector(T('di-mr-detail'), { state: 'detached', timeout: 5_000 });
     await page.keyboard.press('Escape');
     await page.waitForSelector(T('di-mr'), { state: 'detached', timeout: 5_000 });
     expect(decisionsFrom(page), 'minimize and restore sent a decision').toEqual([]);
@@ -1636,7 +2011,7 @@ test(
       await page.click(T(field));
       await page.keyboard.type(typed);
       expect(await where()).toEqual({ focus: field, value: typed });
-      await page.click(T('di-mr-minimize'));
+      await clickMinimize(page);
       await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
       expect(
         await page.$eval(T('di-mr'), (el) => el.getClientRects().length),
@@ -1667,7 +2042,7 @@ test(
 );
 
 test(
-  'AC3 request panel fallbacks: with no content control to return to, restore puts focus on Minimize, never the page',
+  'AC3 request panel fallbacks: with no content control to return to, restore puts focus on the PERSISTENT Options trigger (1B: Minimize is a menu item, gone once the menu closes), never the page',
   async () => {
     const page = await openWindow();
     const focusNow = () =>
@@ -1679,9 +2054,9 @@ test(
       );
 
     // (1) ABSENT: minimized by mouse before any content control had focus (opening focuses the workspace's heading,
-    // which is the panel's own focus target, not a control the person used). The first fallback is Minimize.
+    // which is the panel's own focus target, not a control the person used). The first fallback is the persistent Options trigger (1B).
     await openWorkspace(page);
-    await page.click(T('di-mr-minimize'));
+    await clickMinimize(page);
     await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
     await page.click(T('di-mr-restore'));
     await page.waitForSelector(T('di-mr-restore'), { state: 'detached', timeout: 5_000 });
@@ -1690,13 +2065,13 @@ test(
     expect(absent, 'absent: focus is never left on the gone restore control').not.toBe(
       'di-mr-restore',
     );
-    expect(absent, 'absent: the first fallback, the panel’s Minimize').toBe('di-mr-minimize');
+    expect(absent, 'absent: the first fallback, the persistent Options trigger (not a vanished menu item)').toBe('di-mr-options');
 
     // (2) REMOVED: the person typed in the composer, minimized, then used the "Review requests" entrance, which restores
     // the workspace on the Requests tab: the composer is gone, so focus takes the first fallback.
     await page.click(T('di-mr-composer'));
     await page.keyboard.type('removed by the tab change');
-    await page.click(T('di-mr-minimize'));
+    await clickMinimize(page);
     await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
     await page.click(T('di-mr-open-requests'));
     await page.waitForSelector(T('di-mr-restore'), { state: 'detached', timeout: 5_000 });
@@ -1705,7 +2080,7 @@ test(
     );
     const removed = await focusNow();
     expect(removed, 'removed: focus never falls to the page').not.toBe('BODY');
-    expect(removed, 'removed: the first fallback, the panel’s Minimize').toBe('di-mr-minimize');
+    expect(removed, 'removed: the first fallback, the persistent Options trigger (not a vanished menu item)').toBe('di-mr-options');
 
     // Not reachable through this flow without new product code, so not forced here (and not covered by this test): a
     // kept control that becomes DISABLED or HIDDEN while the workspace is minimized (the decision controls stay mounted
@@ -1773,7 +2148,7 @@ test(
     const WORDS = 'cross-surface 7c1e: kept';
     await page.click(T('di-mr-composer'));
     await page.keyboard.type(WORDS);
-    await page.click(T('di-mr-minimize'));
+    await clickMinimize(page);
     await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
     await shot(page, 'minimized-request-strip');
     // ...and the same strip in a narrow window (resized for this one view, then set back).
@@ -1890,7 +2265,7 @@ test(
     await shot(page, 'restored-request-after-strip');
 
     // 5. Minimize it again, then restore Reception: it is a modal, so the app is inert and the request slot is not usable.
-    await page.click(T('di-mr-minimize'));
+    await clickMinimize(page);
     await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
     await page.click(T('di-reception-restore'));
     await page.waitForSelector(T('di-reception-restore'), { state: 'detached', timeout: 5_000 });
@@ -1976,12 +2351,21 @@ test(
       }
     };
     const workspace = async (where: string) => {
+      // B3 1B: Wider reading and Minimize are items of the Options menu, so the workspace is swept TWICE: closed (the trigger is a control and a new one, held to the target size) and with the menu OPEN (its items are controls; Minimize is held to the target size as before)
       const sweep = await a11ySweep(page, T('di-mr'));
       expect(
         sweep.controls.map((c) => c.id),
+        `${where}: the workspace offers the Options menu`,
+      ).toContain('di-mr-options');
+      sweepChecks(sweep, where, (id) => id === 'di-mr-options');
+      await openOptionsMenu(page);
+      const menu = await a11ySweep(page, T('di-mr-options-popover'));
+      expect(
+        menu.controls.map((c) => c.id),
         `${where}: the workspace offers Minimize`,
       ).toContain('di-mr-minimize');
-      sweepChecks(sweep, where, (id) => id === 'di-mr-minimize');
+      sweepChecks(menu, `${where}, Options menu open`, (id) => id === 'di-mr-minimize');
+      await page.keyboard.press('Escape');
     };
     const tray = async (where: string, expected: string[]) => {
       const sweep = await a11ySweep(page, T('di-minimized-tray'));
@@ -2003,7 +2387,7 @@ test(
       await workspace(at('workspace, Requests tab'));
 
       // The tray with the request chip alone, then with Reception minimized beside it.
-      await page.click(T('di-mr-minimize'));
+      await clickMinimize(page);
       await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
       await tray(at('tray, request chip alone'), ['di-mr-restore']);
       await page.click(T('di-open-reception'));
@@ -2102,7 +2486,7 @@ test(
     await page.waitForSelector(T('di-mr-offer-expiry'), { timeout: 30_000 });
 
     // Minimized: the strip with the restore chip, which carries the owner-attention treatment (a request waits).
-    await page.click(T('di-mr-minimize'));
+    await clickMinimize(page);
     await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
     expect(await page.getAttribute(T('di-mr-restore'), 'data-attention')).toBe('true');
     await audit('minimized strip, request chip with attention');
@@ -2255,7 +2639,7 @@ test(
         await submitDraft(page);
         await page.waitForSelector(T('di-mr-offer-expiry'), { timeout: 30_000 });
       }
-      await page.click(T('di-mr-minimize'));
+      await clickMinimize(page);
       await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
       expect(
         await page.getAttribute(T('di-mr-restore'), 'data-attention'),
@@ -2380,7 +2764,7 @@ test(
     ).toBe(true);
 
     // Minimize the workspace: the same point now reaches a strip chip again.
-    await page.click(T('di-mr-minimize'));
+    await clickMinimize(page);
     await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
     expect(
       await page.$eval(T('di-mr'), (el) => el.getClientRects().length),
@@ -2457,6 +2841,8 @@ async function minimizeRequestWorkspace(page: Page) {
     async () => !(await exists(page, T('di-mr-status'))),
     20_000,
   );
+  await activate(page, 'di-mr-options');
+  await page.waitForSelector(T('di-mr-minimize'), { timeout: 5_000 });
   await activate(page, 'di-mr-minimize');
   await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
 }
@@ -3366,6 +3752,8 @@ for (const [w, h] of [
       );
       await record('workspace open, office open');
       // 3. the workspace is minimized (it stays mounted, hidden), the office still open
+      await activate(page, 'di-mr-options');
+      await page.waitForSelector(T('di-mr-minimize'), { timeout: 5_000 });
       await activate(page, 'di-mr-minimize');
       await page.waitForSelector(T('di-mr-restore'), { timeout: 5_000 });
       await record('workspace minimized, office open');
@@ -3618,10 +4006,10 @@ test(
     const wide = await openWindow();
     await openWorkspace(wide);
     await measure(wide, 'workspace docked, 1600 x 1000');
-    await wide.click(T('di-mr-wide'));
+    await clickWide(wide);
     await waitFor(
       'wider reading',
-      async () => (await wide.getAttribute(T('di-mr-wide'), 'aria-pressed')) === 'true',
+      async () => (await wide.getAttribute(T('di-mr'), 'data-wide')) === 'true',
       5_000,
     );
     await measure(wide, 'wider reading, 1600 x 1000');
@@ -4013,10 +4401,10 @@ test(
       const window = `${w} x ${h}`;
       const page = await openWindow({ width: w, height: h });
       await openWorkspace(page);
-      await page.click(T('di-mr-wide'));
+      await clickWide(page);
       await waitFor(
         'wider reading',
-        async () => (await page.getAttribute(T('di-mr-wide'), 'aria-pressed')) === 'true',
+        async () => (await page.getAttribute(T('di-mr'), 'data-wide')) === 'true',
         5_000,
       );
       await waitFor(
@@ -5189,6 +5577,115 @@ test(
         `the browser: the part of ${id} inside the window is reached (${agree.insideHits} of ${agree.inside} points)`,
       ).toBeGreaterThan(0);
     }
+  },
+  STEPS_MS,
+);
+
+/**
+ * B3 HEADINGS (executor1, 2026-11-08). The proposal's heading takes its LEVEL from the caller and its LOOK from a class, so the level the page's outline needs changes nothing that is drawn.
+ * MEASURED on the bytes before the repair: New Mission h2 "This conversation" -> h4 "The proposal, exactly as drafted" and the request workspace's Ask tab h2 "Codex Orchestrator" -> h4 (h3 missing in both); the Requests tab
+ * (h3 request title -> h4 -> h5 rules) and the offer (h4 -> h5) were right and must stay so. The expected numbers below are the BEFORE table's, not chosen: 13px/600 for the proposal heading, 12px/600 with an 8px/2px margin for the
+ * rules' sub-headings, and the text colour (--di-text, read from the product through a probe and never typed). Problems are COLLECTED across every check and asserted once, so a red names every defect and not the first.
+ */
+type HeadingRow = {
+  level: number;
+  tag: string;
+  text: string;
+  isProposalHeading: boolean;
+  isRuleHeading: boolean;
+  inOffer: boolean;
+  fontSize: string;
+  fontWeight: string;
+  color: string;
+  marginTop: string;
+  marginBottom: string;
+  lineHeight: string;
+  textColor: string;
+};
+async function headingRows(page: Page, scope: string, proposalTestId: string): Promise<HeadingRow[]> {
+  return page.evaluate(
+    ({ sc, pid }) => {
+      const root = document.querySelector<HTMLElement>(sc);
+      if (root === null) return [];
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--di-text)';
+      root.appendChild(probe);
+      const textColor = getComputedStyle(probe).color;
+      probe.remove();
+      return [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6, [role="heading"]')]
+        .filter((e) => e.getClientRects().length > 0)
+        .map((e) => {
+          const cs = getComputedStyle(e);
+          const proposal = e.closest(`[data-testid="${pid}"]`);
+          return {
+            level: Number(e.getAttribute('aria-level') ?? e.tagName.slice(1)),
+            tag: e.tagName.toLowerCase(),
+            text: (e.textContent ?? '').trim().slice(0, 40),
+            isProposalHeading: proposal !== null && e.parentElement === proposal,
+            isRuleHeading: proposal !== null && e.closest('.di-mr-rules') !== null,
+            inOffer: e.closest('[data-testid="di-mr-offer"]') !== null && e.closest('.di-mr-rules') !== null,
+            fontSize: cs.fontSize,
+            fontWeight: cs.fontWeight,
+            color: cs.color,
+            marginTop: cs.marginTop,
+            marginBottom: cs.marginBottom,
+            lineHeight: cs.lineHeight,
+            textColor,
+          };
+        });
+    },
+    { sc: scope, pid: proposalTestId },
+  );
+}
+const colourWord = (r: HeadingRow) => (r.color === r.textColor ? '--di-text' : r.color);
+function headingProblems(
+  where: string,
+  rows: HeadingRow[],
+  want: { proposalLevel: number; rulesLevel: number | null; proposalLineHeight: string; rulesLineHeight: string },
+): string[] {
+  const problems: string[] = [];
+  rows.forEach((r, i) => {
+    if (i > 0 && r.level > rows[i - 1]!.level + 1)
+      problems.push(`${where}: the outline skips a level: ${rows[i - 1]!.tag} "${rows[i - 1]!.text}" -> ${r.tag} "${r.text}"`);
+  });
+  const proposal = rows.filter((r) => r.isProposalHeading);
+  if (proposal.length !== 1) problems.push(`${where}: expected ONE proposal heading, found ${proposal.length}`);
+  for (const r of proposal) {
+    if (r.level !== want.proposalLevel) problems.push(`${where}: the proposal heading is h${r.level}; the outline needs h${want.proposalLevel}`);
+    const look = `${r.fontSize} ${r.fontWeight} ${colourWord(r)} m${r.marginTop}/${r.marginBottom} lh${r.lineHeight}`;
+    const expected = `13px 600 --di-text m0px/0px lh${want.proposalLineHeight}`;
+    if (look !== expected) problems.push(`${where}: the proposal heading is drawn "${look}"; it was drawn "${expected}"`);
+  }
+  const rules = rows.filter((r) => r.isRuleHeading);
+  if (want.rulesLevel !== null) {
+    if (rules.length === 0) problems.push(`${where}: no rule sub-heading is drawn, so their level and look are not checked`);
+    for (const r of rules) {
+      if (r.level !== want.rulesLevel) problems.push(`${where}: the rule sub-heading "${r.text}" is h${r.level}; the outline needs h${want.rulesLevel}`);
+      const look = `${r.fontSize} ${r.fontWeight} ${colourWord(r)} m${r.marginTop}/${r.marginBottom} lh${r.lineHeight}`;
+      const expected = `12px 600 --di-text m8px/2px lh${want.rulesLineHeight}`;
+      if (look !== expected) problems.push(`${where}: the rule sub-heading "${r.text}" is drawn "${look}"; it was drawn "${expected}"`);
+    }
+  }
+  return problems;
+}
+
+test(
+  'B3 headings: the request workspace never skips a heading level, and the proposal and its rules are drawn as they were at the level each place needs (Ask tab drafted turn, Requests tab picked request, the offer)',
+  async () => {
+    const page = await openWindow();
+    await openWorkspace(page);
+    await ask(page, 'make the readiness probe stable', 'The readiness probe.');
+    const problems: string[] = [];
+    const lh = { proposalLineHeight: '17.55px', rulesLineHeight: '17.4px' };
+    problems.push(...headingProblems('Ask tab, drafted turn', await headingRows(page, T('di-mr'), 'di-mr-draft-proposal'), { proposalLevel: 3, rulesLevel: 4, ...lh }));
+    await submitDraft(page);
+    await page.waitForSelector(T('di-mr-offer-expiry'), { timeout: 30_000 });
+    const picked = await headingRows(page, T('di-mr'), 'di-mr-proposal');
+    problems.push(...headingProblems('Requests tab, picked request', picked, { proposalLevel: 4, rulesLevel: 5, ...lh }));
+    const offerRules = picked.filter((r) => r.inOffer);
+    if (offerRules.length === 0) problems.push('Requests tab, the offer: no rule sub-heading is drawn, so the offer is not checked');
+    for (const r of offerRules) if (r.level !== 5) problems.push(`Requests tab, the offer: the rule sub-heading "${r.text}" is h${r.level}; the outline needs h5 under its h4`);
+    expect(problems, problems.join('\n')).toEqual([]);
   },
   STEPS_MS,
 );

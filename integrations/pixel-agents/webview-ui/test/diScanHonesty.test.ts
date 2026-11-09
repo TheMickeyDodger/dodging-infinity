@@ -117,7 +117,7 @@ describe('B-H1: every scan view of a production Mission says what it has not rea
     expect(html).not.toContain('data-testid="di-scan-editor-path"');
     expect(html).not.toContain('aria-label="Diff layout"');
     expect(html).not.toContain('di-scan-statusbar');
-    expect(html).not.toContain('aria-label="Copy the diff"');
+    expect(html).not.toContain('aria-label="Copy the lines shown"');
   });
   it('Comments on a Herdr task says the review was not reported: no thread, no Paid label, no claim of none', () => {
     const view = /data-testid="di-scan-comments-view"[\s\S]*$/.exec(render('comments'))?.[0] ?? '';

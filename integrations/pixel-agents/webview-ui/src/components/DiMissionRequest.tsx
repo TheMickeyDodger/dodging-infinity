@@ -30,6 +30,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { DI_PANEL_WIDTH_PX } from '../constants.js';
 import type { DiMissionRequestControl } from '../hooks/useDiMissionRequest.js';
+import { releaseCoverIsolation } from './diCoverIsolation.js';
 import type { DiKeptView } from './diMinimize.js';
 import {
   focusExposed,
@@ -47,6 +48,7 @@ import {
   composerProblem,
   countdownWords,
   COVERING_WORDS,
+  COVERS_STAGE_WORDS,
   decisionBlockedWords,
   decisionPending,
   DI_DRAFT_HEAD,
@@ -102,6 +104,7 @@ import {
 import { requestStageStatus } from './diMissionStatus.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 import { useStickyScrollPad } from './diStickyPad.js';
+import { AnchoredPopover, PopoverItem } from './ui/AnchoredPopover.js';
 
 // ---------------------------------------------------------------------------------------------
 // small hooks
@@ -285,6 +288,7 @@ export function DraftCard({
         source={{ requestRef: null, missionId: null, revision: null, digest: draft.digest }}
         meanings={meanings}
         heading="The proposal, exactly as drafted"
+        level={3}
         testId="di-mr-draft-proposal"
         sourceStanding={sourceStanding}
       />
@@ -571,7 +575,11 @@ function AskTab({
           <div className="di-mr-actions">
             <button
               type="button"
-              onClick={() => control.revise(null)}
+              onClick={() => {
+                // D1b: this box unmounts in the update it causes; focus goes to the composer, which keeps the words
+                composerRef.current?.focus();
+                control.revise(null);
+              }}
               data-testid="di-mr-cancel-revision"
             >
               Stop revising and keep that proposal
@@ -798,6 +806,7 @@ export function DecisionBlock({
                     }
                   }
                   testId="di-mr-offer-proof"
+                  level={5}
                 />
               </dd>
             </div>
@@ -897,12 +906,21 @@ function OutcomeChoices({
 }) {
   const { state } = control;
   const confirmingReject = rejectArmed(state, view);
+  // D1b: stepping back from Reject (its "Keep it", or Escape) unmounts the confirmation that had focus; focus goes back to "Reject for good…", as
+  // Withdraw's does (measured before: it fell to the workspace heading)
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const wasConfirmingReject = useRef(false);
+  useEffect(() => {
+    if (!confirmingReject && wasConfirmingReject.current)
+      rootRef.current?.querySelector<HTMLElement>('[data-testid="di-mr-reject"]')?.focus();
+    wasConfirmingReject.current = confirmingReject;
+  }, [confirmingReject]);
   const can = (op: 'decline' | 'reject' | 'requestChanges'): boolean =>
     outcomeRequest(state, op, server) !== null;
   const reasonHint = changeReasonProblem(state.changeReason);
   const reasonHintId = 'di-mr-change-reason-hint';
   return (
-    <div className="di-mr-box" data-tone="info" data-testid="di-mr-outcomes">
+    <div ref={rootRef} className="di-mr-box" data-tone="info" data-testid="di-mr-outcomes">
       <h4>Or do not approve it</h4>
       <p>
         Each of these is recorded the way an approval is: as an operator attestation of your choice,
@@ -1342,6 +1360,7 @@ function Detail({
           }}
           meanings={meanings}
           heading="The proposal"
+          level={4}
           showSource={false}
         />
       ) : (
@@ -1470,9 +1489,31 @@ function RequestsTab({
               Choose a request to read it exactly, and to decide or follow it.
             </p>
           ) : selected === undefined ? (
-            <p className="di-mr-hint" data-testid="di-mr-reading-request">
-              Reading this request…
-            </p>
+            // 1C: "Reading" only while the read is in flight or has not been sent yet. A read that FAILED left it drawn for ever; now it says so and offers the read again (a re-select asks again).
+            // The wrapper outlives the swap, so the control that was used hands focus to it (the button itself is replaced by the pending reading).
+            <div data-testid="di-mr-request-state" tabIndex={-1} role="status">
+              {!isPending(state, 'request', state.selectedRef) && (state.unreadRequests ?? []).includes(state.selectedRef) ? (
+                <>
+                  <p className="di-mr-hint" data-testid="di-mr-request-unread">
+                    This request could not be read just now, so nothing of it is shown.
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="di-mr-read-again"
+                    onClick={(event) => {
+                      event.currentTarget.closest<HTMLElement>('[data-testid="di-mr-request-state"]')?.focus();
+                      control.select(state.selectedRef);
+                    }}
+                  >
+                    Read it again
+                  </button>
+                </>
+              ) : (
+                <p className="di-mr-hint" data-testid="di-mr-reading-request">
+                  Reading this request…
+                </p>
+              )}
+            </div>
           ) : (
             <Detail
               view={selected}
@@ -1544,6 +1585,9 @@ function Workspace({
       // scan face's own rescue target for a stage, its Back control (Mission details, Code Diff, Comments: DiScanPanel focuses the same on a page change);
       // else the rail entry marked as the current page (Home has neither). Measured before this line: all five such routes left focus on <body> (logs/79).
       const shown = (el: HTMLElement | null) => (el !== null && el.isConnected && el.getClientRects().length > 0 ? el : null);
+      // B2e R22: release the covered-stage isolation FIRST. This cleanup runs before the isolation's own (a passive effect), and the opener this returns
+      // to may be one the workspace covered: focus() on an inert control is a silent no-op, and focus fell to the page body (b2e-r22-opener-red-1).
+      releaseCoverIsolation();
       const target =
         shown(back) ??
         document.querySelector<HTMLElement>('[data-testid="di-office-panel-collapsed"]') ??
@@ -1558,10 +1602,11 @@ function Workspace({
   // words and the open disclosures are kept; what hiding loses (each region's scroll, focus) is taken on minimize and
   // given back on restore. Focus moves to the restore control, and comes back to the last CONTENT control the person
   // used (never the Minimize toggle unless there was none; diMinimize.ts). Presentation only: nothing is sent.
-  const minimizeRef = useRef<HTMLButtonElement | null>(null);
+  // 1B: Minimize lives in the Options popover. This wrapper holds the trigger AND the popover, so the last-content tracker never records a menu item (which unmounts) as the control to come back to.
+  const optionsRef = useRef<HTMLSpanElement | null>(null);
   const restoreRef = useRef<HTMLButtonElement | null>(null);
   const keptView = useRef<DiKeptView | null>(null);
-  const lastContent = useLastContentFocus(rootRef, minimizeRef);
+  const lastContent = useLastContentFocus(rootRef, optionsRef);
   const minimizeWorkspace = () => {
     if (rootRef.current) keptView.current = keepView(rootRef.current, lastContent.current);
     control.minimize();
@@ -1577,7 +1622,7 @@ function Workspace({
     const kept = keptView.current;
     keptView.current = null;
     restoreScroll(kept);
-    restoreFocus(kept, minimizeRef.current, headingRef.current);
+    restoreFocus(kept, optionsRef.current?.querySelector<HTMLElement>('button') ?? null, headingRef.current);
   }, [control.minimized]);
 
   // A transition that removes what had focus hands it to a named place:
@@ -1597,6 +1642,41 @@ function Workspace({
     if (state.revising !== null && lastRevising.current === null) composerRef.current?.focus();
     lastRevising.current = state.revising;
   }, [state.revising]);
+
+  // D1b: Escape peels ONE layer of the workspace per press, innermost first, as the scan face does: an armed Reject or Withdraw on the request shown is
+  // disarmed (each hands focus back to the control that armed it); a revision is stopped (that proposal and the composer are kept; focus to the composer);
+  // on Ask, the conversation shown is closed with the composer KEPT (New Mission's keeping reset; focus to the composer); on Requests, a picked request is
+  // put back in the list (focus on its row, which stays drawn), and what was typed for it stays WITH it (the reducer's heldInputs: it comes back when that
+  // request is chosen again and never shows for another). Only when nothing is left does Escape close the workspace.
+  const peelOneLayer = (): boolean => {
+    const shown = state.selectedRef !== null && state.tab === 'requests' ? state.views[state.selectedRef] : undefined;
+    if (shown !== undefined && rejectArmed(state, shown)) {
+      control.disarmReject();
+      return true;
+    }
+    if (shown !== undefined && withdrawArmed(state, shown)) {
+      control.disarmWithdraw();
+      return true;
+    }
+    if (state.tab === 'ask' && state.revising !== null) {
+      composerRef.current?.focus();
+      control.revise(null);
+      return true;
+    }
+    if (state.tab === 'ask' && state.conversation.id !== null) {
+      composerRef.current?.focus();
+      // the conversation closes and the composer keeps the SAME input (one transition, not a clear and a retype)
+      control.closeConversation();
+      return true;
+    }
+    if (state.tab === 'requests' && state.selectedRef !== null) {
+      const row = rootRef.current?.querySelector<HTMLElement>(`[data-testid="di-mr-request-${state.selectedRef}"]`) ?? null;
+      (row ?? tabRefs.current.requests)?.focus();
+      control.select(null);
+      return true;
+    }
+    return false;
+  };
 
   const needing =
     state.overview?.requests.filter((r) =>
@@ -1691,6 +1771,8 @@ function Workspace({
       data-testid="di-mr"
       data-wide={state.wide ? 'true' : 'false'}
       data-covering={layout.covering ? 'true' : 'false'}
+      // K1: while it COVERS the window it covers the world (WorldMap.tsx reads it at the key); beside the panel it does not
+      data-di-covers-world={layout.covering ? '' : undefined}
       data-split={twoColumnReading(layout, state.wide) ? 'true' : 'false'}
       style={style}
       // Keys typed in the workspace belong to it: none reaches the office behind.
@@ -1705,7 +1787,7 @@ function Workspace({
         event.stopPropagation();
         if (event.key === 'Escape' && !event.defaultPrevented) {
           event.preventDefault();
-          control.close();
+          if (!peelOneLayer()) control.close();
         }
       }}
       onKeyUp={(event) => event.stopPropagation()}
@@ -1720,23 +1802,34 @@ function Workspace({
           </p>
         </div>
         <div className="di-mr-head-tools">
-          <button
-            type="button"
-            aria-pressed={state.wide}
-            onClick={() => control.setWide(!state.wide)}
-            data-testid="di-mr-wide"
-          >
-            {state.wide ? 'Narrower reading' : 'Wider reading'}
-          </button>
-          <button
-            type="button"
-            ref={minimizeRef}
-            onClick={minimizeWorkspace}
-            data-testid="di-mr-minimize"
-            title="Minimize the requests; Restore brings them back as you left them"
-          >
-            Minimize
-          </button>
+          {/* 1B: the reading width and Minimize are secondaries: ONE anchored, non-modal popover. Close requests stays direct (an exit). Minimize closes the popover IN PLACE and then
+              minimizes, so nothing is left open under the hidden surface and the person comes back to the last CONTENT control they used (diMinimize.ts), else to this trigger. */}
+          <span ref={optionsRef} className="di-mr-options">
+            <AnchoredPopover label="Options" dialogLabel="Request workspace options" testid="di-mr-options">
+              {(dismiss) => (
+                <>
+                  <PopoverItem
+                    // F5: an ACTION named for what it does (the label flips, and is the visible state cue), not a toggle: no aria-pressed (a pressed "Narrower reading" says the opposite of the action)
+                    label={state.wide ? 'Narrower reading' : 'Wider reading'}
+                    testid="di-mr-wide"
+                    onSelect={() => {
+                      control.setWide(!state.wide);
+                      dismiss('to-trigger');
+                    }}
+                  />
+                  <PopoverItem
+                    label="Minimize"
+                    testid="di-mr-minimize"
+                    title="Minimize the requests; Restore brings them back as you left them"
+                    onSelect={() => {
+                      dismiss('in-place');
+                      minimizeWorkspace();
+                    }}
+                  />
+                </>
+              )}
+            </AnchoredPopover>
+          </span>
           <button type="button" onClick={control.close} data-testid="di-mr-close">
             Close requests
           </button>
@@ -1745,6 +1838,12 @@ function Workspace({
       {layout.covering && (
         <p className="di-mr-covering" data-testid="di-mr-covering-note">
           {COVERING_WORDS}
+        </p>
+      )}
+      {/* B2e R22 (X1): the stated reason and route for covered stage controls; CSS shows it only while one is marked */}
+      {!layout.covering && (
+        <p className="di-mr-covers-stage" data-testid="di-mr-covers-stage-note">
+          {COVERS_STAGE_WORDS}
         </p>
       )}
       {status !== null && (

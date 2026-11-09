@@ -220,6 +220,13 @@ const herdrNotesDrawn = () =>
       .map((el) => el.getAttribute('data-testid')),
   );
 
+/** B2c: Comments, Evidence and review and Herdr are items of Mission details' "More actions" (an anchored, non-modal popover); open it, unless it is
+ *  open, to read or use one. A held item is aria-disabled (and stays focusable), never natively disabled. */
+async function openMore(): Promise<void> {
+  if ((await p().locator('[data-testid="di-scan-more-actions-popover"]').count()) === 0) await p().click('[data-testid="di-scan-more-actions"]');
+  await p().waitForSelector('[data-testid="di-scan-more-actions-popover"]');
+}
+
 test(
   'A1, A3, A6 ON A FINISHED MISSION: each section leads with ONE status line; its detail is a closed, named, keyboard disclosure that holds the words; the read-only sentence and the Herdr note are drawn once',
   async () => {
@@ -285,8 +292,12 @@ test(
     const herdrNote = ((await p().locator('[id="di-scan-herdr-desc"]').textContent()) ?? '').trim();
     assert.notEqual(herdrNote, '', 'the Herdr fold has words to describe the control with');
     assert.equal(await p().locator(sel('di-scan-herdr-more')).evaluate((d) => (d as HTMLDetailsElement).open), false, 'the Herdr fold is closed');
+    // CHANGED IN B2c: the Herdr control is an item of "More actions": opened to measure it, then closed by Escape (focus back on its trigger) before the walk below
+    await openMore();
     const herdrAx = await ax('[data-testid="di-scan-herdr"]');
     assert.ok(herdrAx.description.includes(herdrNote), `the Herdr control is described by the fold's words: ${herdrAx.description}`);
+    await p().keyboard.press('Escape');
+    assert.equal(await p().locator(sel('di-scan-more-actions-popover')).count(), 0, 'More actions closed again');
     // (this finished Mission draws no state action: those are measured in diScanDecideNavigationBrowser, CARRY1, where four are drawn)
 
     // KEYBOARD: Tab reaches the Trash detail's summary; Enter opens it, Space closes it; the state is in the DOM and in the tree
@@ -313,6 +324,8 @@ test(
 
     // A3 across the Mission's screens: Code Diff and Comments each draw at most one Herdr note
     for (const view of ['diff', 'comments'] as const) {
+      // CHANGED IN B2c: Comments is an item of "More actions"
+      if (view === 'comments') await openMore();
       await p().click(sel(view === 'diff' ? 'di-scan-code-diff' : 'di-scan-comments'));
       await p().waitForSelector(`[data-testid="di-scan-stage"][data-view="${view}"]`);
       assert.ok((await herdrNotesDrawn()).length <= 1, `${view}: at most one Herdr note (${JSON.stringify(await herdrNotesDrawn())})`);
