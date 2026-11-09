@@ -43,7 +43,13 @@ const render = (reception: DiScanReception | null, rows: readonly DiScanRow[] = 
     }),
   );
 /** The page's own markup (the rail is rendered before it). */
-const page = (html: string) => /data-testid="di-reception-page"[\s\S]*$/.exec(html)?.[0] ?? '';
+/** CHANGED IN B2b (scoping only): Home, mounted beside every screen, now comes AFTER the screens in the document (Tab follows the window's order), so a
+ * slice "from the screen to the end" stops where Home begins. Where it looks changes, never what it expects. */
+const untilHome = (s: string) => {
+  const at = s.indexOf('data-testid="di-scan-home"');
+  return at < 0 ? s : s.slice(0, at);
+};
+const page = (html: string) => untilHome(/data-testid="di-reception-page"[\s\S]*$/.exec(html)?.[0] ?? '');
 const rail = (html: string) =>
   /<nav[^>]*data-testid="di-rail"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
 /** Every opening tag carrying `testid`. */

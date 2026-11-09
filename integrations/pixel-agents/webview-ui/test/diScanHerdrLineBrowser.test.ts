@@ -211,6 +211,14 @@ async function openHerdrDetailByKeyboard(): Promise<string> {
   return (await p().locator(sel('di-scan-herdr-note')).textContent()) ?? '';
 }
 
+/** B2c: Comments, Evidence and review and Herdr are items of Mission details' "More actions" (an anchored, non-modal popover); open it, unless it is
+ *  open, to read or use one. A held item is aria-disabled (and stays focusable), never natively disabled. */
+async function openMore(): Promise<void> {
+  if ((await p().locator('[data-testid="di-scan-more-actions-popover"]').count()) === 0) await p().click('[data-testid="di-scan-more-actions"]');
+  await p().waitForSelector('[data-testid="di-scan-more-actions-popover"]');
+}
+const heldNow = async (selector: string) => (await p().locator(selector).getAttribute('aria-disabled')) === 'true';
+
 test(
   'A7, NOT SET UP: the default line is the short, truthful "Herdr is not set up in this office."; the server\'s exact reason (its flags and paths) is one keyboard disclosure away, character for character; the rail keeps it in the control',
   async () => {
@@ -225,11 +233,14 @@ test(
     assert.doesNotMatch(await p().locator(sel('di-scan-herdr-reason')).innerText(), /--herdr|absolute paths|HOME/, 'no flag or path in the default line');
     assert.equal(((await p().locator(sel('di-scan-herdr-more-summary')).textContent()) ?? '').trim(), 'The office’s reason, in its own words');
     // CARRY1: with the detail still closed, the accessibility tree describes the control by the server's exact reason (through the always-present copy)
+    // CHANGED IN B2c: the control is an item of "More actions"; the walk to the detail below starts at Back, so focus leaving closes the popover
+    await openMore();
     const described = await axDescription(sel('di-scan-herdr'));
     assert.ok(described.includes(reason), `the control is described by the exact reason, in the accessibility tree: ${described}`);
     assert.equal(await openHerdrDetailByKeyboard(), reason, 'the server reason, character for character');
-    // admission unchanged: disabled, with Check again
-    assert.equal(await p().locator(sel('di-scan-herdr')).isDisabled(), true);
+    // admission unchanged: held (CHANGED IN B2c: aria-disabled, BEFORE natively disabled), with Check again
+    await openMore();
+    assert.equal(await heldNow(sel('di-scan-herdr')), true);
     assert.equal(await p().locator(sel('di-scan-herdr-recheck')).count(), 1);
     // the control is described by the exact reason too, and titled with it
     assert.equal(await p().locator(sel('di-scan-herdr')).getAttribute('title'), reason);
@@ -256,19 +267,26 @@ test(
     mode = 'available_then_refused';
     await boot(ACTIVE);
     await openMission(null, 'all');
-    await p().waitForFunction(() => !(document.querySelector('[data-testid="di-scan-herdr"]') as HTMLButtonElement | null)?.disabled);
+    // CHANGED IN B2c: Herdr is an item of "More actions"; its click closes the popover (focus back on the trigger)
+    await openMore();
+    await p().waitForFunction(() => {
+      const item = document.querySelector('[data-testid="di-scan-herdr"]');
+      return item !== null && item.getAttribute('aria-disabled') !== 'true';
+    });
     await p().click(sel('di-scan-herdr'));
     await p().waitForFunction((words) => document.querySelector('[data-testid="di-scan-herdr-reason"]')?.textContent?.trim() === words, LAUNCH_REFUSED);
     const reason = serverReasons.at(-1)!;
     assert.equal(reason, ROUTE_DETAIL, 'the reply carried the route\'s detail unchanged');
     assert.equal(await lineCount(sel('di-scan-herdr-reason')), 1);
     assert.doesNotMatch(await p().locator(sel('di-scan-herdr-reason')).innerText(), /herdr-attach|launcher was written/, 'no path in the default line');
-    // CARRY1: with the detail still closed, the accessibility tree describes the control by the route's exact words
+    // CARRY1: with the detail still closed, the accessibility tree describes the control by the route's exact words (CHANGED IN B2c: read with More actions open)
+    await openMore();
     const described = await axDescription(sel('di-scan-herdr'));
     assert.ok(described.includes(ROUTE_DETAIL), `the control is described by the route's words, in the accessibility tree: ${described}`);
     assert.equal(await openHerdrDetailByKeyboard(), ROUTE_DETAIL, 'the route\'s words, character for character');
-    // admission unchanged: a refused launch leaves the control enabled (another click may be made), with no Check again
-    assert.equal(await p().locator(sel('di-scan-herdr')).isDisabled(), false);
+    // admission unchanged: a refused launch leaves the control enabled (another click may be made), with no Check again (CHANGED IN B2c: read in More actions)
+    await openMore();
+    assert.equal(await heldNow(sel('di-scan-herdr')), false);
     assert.equal(await p().locator(sel('di-scan-herdr-recheck')).count(), 0);
     assert.deepEqual([...new Set(herdrSent.map((m) => m.op))].sort(), ['launch', 'status']);
   },
@@ -287,7 +305,9 @@ test(
     assert.equal(await lineCount(sel('di-scan-herdr-reason')), 1);
     assert.equal(((await p().locator(sel('di-scan-herdr-more-summary')).textContent()) ?? '').trim(), 'The office’s answer about Herdr');
     assert.equal(await openHerdrDetailByKeyboard(), serverReasons.at(-1), 'the office\'s answer, character for character');
-    assert.equal(await p().locator(sel('di-scan-herdr')).isDisabled(), true, 'archived: Herdr stays disabled');
+    // CHANGED IN B2c: held (aria-disabled), in More actions
+    await openMore();
+    assert.equal(await heldNow(sel('di-scan-herdr')), true, 'archived: Herdr stays held');
   },
   STEPS_MS,
 );

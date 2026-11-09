@@ -166,7 +166,7 @@ body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true']) {
   grid-column: 1;
   grid-row: 1;
   margin: 0;
-  font-size: 15px;
+  font-size: var(--di-text-read);
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.3;
@@ -193,6 +193,7 @@ body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true']) {
   font-size: 12px;
 }
 .di-mr-covering,
+.di-mr-covers-stage,
 .di-mr-status {
   margin: 0;
   padding: 6px 12px;
@@ -201,6 +202,13 @@ body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true']) {
   border-bottom: 1px solid var(--mr-border-soft);
   font-size: 12px;
   line-height: 1.4;
+}
+/* B2e R22 (X1): the stated reason for covered stage controls, shown only while the isolation has marked one (diCoverIsolation.ts sets the mark) */
+.di-mr-covers-stage {
+  display: none;
+}
+body:has(.di-scan-stage [data-di-covered]) .di-mr-covers-stage {
+  display: block;
 }
 .di-mr-status {
   background: var(--mr-surface-2);
@@ -231,7 +239,7 @@ body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true']) {
   color: var(--mr-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--di-radius);
   font-size: 13px;
   font-weight: 500;
   text-align: center;
@@ -435,10 +443,16 @@ body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true']) {
 }
 /* the open request's heading is its plain title; the references live in their own disclosure */
 .di-mr-detail > h3 {
-  font-size: 15px;
+  font-size: var(--di-text-read);
   overflow-wrap: anywhere;
 }
 .di-mr h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mr-text);
+}
+/* The proposal's heading takes its LEVEL from the caller (so the page's outline never skips one) and its LOOK from this class: drawn the same at h3 and at h4. */
+.di-mr .di-mr-proposal-heading {
   font-size: 13px;
   font-weight: 600;
   color: var(--mr-text);
@@ -812,10 +826,13 @@ body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true']) {
 }
 
 /* The proof rules: every rule as a sentence, in sections; long digests and keys wrap rather than clip. */
-.di-mr-rules h5 {
+/* The sub-headings are h4 under an h3 proposal and h5 under an h4 one: one look for both, and the line height and colour they inherited as h5 (a tag rule for h4 would otherwise change them). */
+.di-mr-rules .di-mr-rules-heading {
   margin: 8px 0 2px;
   font-size: 12px;
   font-weight: 600;
+  line-height: inherit;
+  color: inherit;
 }
 .di-mr-rules ul {
   margin: 0;

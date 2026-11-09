@@ -310,6 +310,41 @@ for (const [kind, said, notSaid] of [
     STEPS_MS,
   );
 
+test(
+  'F3a, Dismiss on a Send outcome BY KEYBOARD: the outcome goes and focus lands in the ask box, which is SEEN (never on the page); the typed ask is kept',
+  async () => {
+    await boot();
+    await panelBecomes('available');
+    answers.turn = 'refused';
+    await ask().fill(TEXT);
+    await send().click();
+    const outcome = p().locator(sel('di-new-send-outcome'));
+    await outcome.waitFor({ timeout: 10_000 });
+    const problems: string[] = [];
+    await p().locator(sel('di-new-send-outcome-dismiss')).first().focus();
+    await p().keyboard.press('Enter');
+    await outcome.first().waitFor({ state: 'detached', timeout: 5_000 });
+    const focused = p().locator(':focus');
+    const landed = (await focused.count()) === 0 ? 'BODY' : ((await focused.first().getAttribute('data-testid')) ?? 'an element without a test id');
+    if (landed !== 'di-new-ask') problems.push(`focus landed on ${landed}, not in the ask box`);
+    const box = await ask().boundingBox();
+    const view = p().viewportSize();
+    let seenOk = false;
+    if (box !== null && view !== null && box.width > 0 && box.height > 0 && box.y >= 0 && box.y + box.height <= view.height) {
+      try {
+        await ask().click({ trial: true, timeout: 1500 });
+        seenOk = true;
+      } catch {
+        seenOk = false;
+      }
+    }
+    if (!seenOk) problems.push('the ask box is not SEEN (not in the window or not hit-testable at its centre)');
+    if ((await ask().inputValue()) !== TEXT) problems.push('the typed ask was not kept exactly');
+    assert.deepEqual(problems, [], 'CONTRACT (DISMISS LANDING): the outcome goes, focus lands in the ask box (seen), and the ask is kept');
+  },
+  STEPS_MS,
+);
+
 // ── F4 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The workspace open on Ask, opened from "Review requests", with an unsent draft. */
@@ -445,8 +480,8 @@ for (const [page, reach, view, target] of [
   ['HOME', async () => go('di-rail-home'), 'list', 'di-rail-home'],
   ['MISSION DETAILS', async () => {
     await go('di-rail-home');
+    // CHANGED IN B2a (Q8 = (a)): one click docks a Mission; the select-then-open second step (the removed card's Open Mission) is gone
     await go('di-scan-row');
-    await go('di-scan-open-mission');
   }, 'mission', 'di-scan-back'],
 ] as const)
   for (const close of ['its Close button', 'Escape'] as const)
@@ -539,8 +574,11 @@ test(
 // ── Review round 2 (Lead1's round-3 requirement): RECOVERY, not only failure. "The read failed" and "the conversation is empty" are different facts; the page
 // says each from explicit state (a successful read sets `readAt`; emptiness never stands for success). Each proof is run on BOTH routes separately: the Recent
 // CLICK (a pick) and the WATCH refresh (the poll while New Mission shows the conversation).
+// B2e: a RE-read of the conversation already shown is no longer a click on its Recent ask (the selected ask now CLOSES the conversation, as "Close this
+// conversation" does); the CLICK route of a re-read is the labelled "Read this conversation again", drawn while the read failed. Assertions unchanged.
 
 const recentAsk = (id: string) => p().locator(`[data-testid="di-new-recent-ask"][data-conversation="${id}"]`);
+const readAgain = () => p().locator(sel('di-new-read-again'));
 /** Wait until the page has made at least `n` more reads of conversation `id` (each answered as `answers.recent` says), then let it draw. */
 async function reads(id: string, n: number): Promise<void> {
   const before = conversationReads(id);
@@ -566,7 +604,7 @@ for (const route of ['CLICK', 'WATCH'] as const)
       await ask().fill(TEXT);
       assert.equal(await sendHoldIsUnread(), true, 'precondition: held as not read');
       answers.recent![B] = 'empty';
-      if (route === 'CLICK') await recentAsk(B).click();
+      if (route === 'CLICK') await readAgain().click();
       await reads(B, 1);
       await p().waitForSelector(sel('di-new-thread-empty'), { timeout: 10_000 });
       assert.match(await p().locator(sel('di-new-thread-empty')).innerText(), /was read: it holds no messages/);
@@ -587,7 +625,7 @@ for (const route of ['CLICK', 'WATCH'] as const)
       await readOutcomes().first().waitFor({ timeout: 10_000 });
       assert.match(await readOutcomes().first().innerText(), /as last read/);
       answers.recent![A] = 'ok';
-      if (route === 'CLICK') await recentAsk(A).click();
+      if (route === 'CLICK') await readAgain().click();
       await reads(A, 1);
       await p().waitForFunction(() => document.querySelectorAll('[data-testid="di-new-send-outcome"][data-op="conversation"]').length === 0, undefined, { timeout: 10_000 });
       assert.match(await p().locator(sel('di-new-thread')).innerText(), new RegExp(ASK_A), 'A as read');

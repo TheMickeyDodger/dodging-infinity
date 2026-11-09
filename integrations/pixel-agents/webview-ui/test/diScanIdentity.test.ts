@@ -97,6 +97,13 @@ const text = (markup: string) =>
 /** Just the swarm: the page has other, unrelated words (an objective can be "Unknown") that a check about identity must not read. */
 const swarmOf = (markup: string) => /<ul[^>]*data-testid="di-scan-swarm"[\s\S]*?<\/ul>/.exec(markup)?.[0] ?? '';
 const labels = (markup: string) => [...markup.matchAll(/data-testid="di-scan-identity" data-identity="([a-z_]+)"/g)].map((x) => x[1]!);
+/**
+ * CHANGED IN B2a (Direction B, Q8 = (a), the Lead 2026-11-05): these tests read TWO surfaces, Mission details and Home's inline expanded card ('list').
+ * One click now docks a Mission and the card is removed, so Mission details is the ONE surface that lists a Mission's roles and runtime records; Home is
+ * mounted beside it, and the labels are still counted page-wide, so "exactly once" still holds with Home on the page. That Home draws none of it (no second,
+ * partial copy) is pinned in its own test below.
+ */
+const SURFACES = ['mission'] as const;
 
 const STATES: Array<[string, Partial<DiMember>, string, string]> = [
   ['replaced', { classification: 'replaced', reason: 'session_changed', live: false, notLiveReason: 'member_replaced:session_changed' }, 'replaced', 'Replaced by another session'],
@@ -113,7 +120,7 @@ describe('the bound-task shape: runtime_agents is empty and the roles are the ro
     expect(state.runtimeAgents?.counts).toEqual([{ name: 'represented_by_teams', value: 4 }]);
   });
 
-  for (const view of ['mission', 'list'] as const) {
+  for (const view of SURFACES) {
     describe(`in the ${view === 'mission' ? 'Mission details swarm' : 'list card swarm'} (rendered markup)`, () => {
       it.each(STATES)('%s: the role is shown, labelled with its OWN state, the avatar is marked unresolved, and no activity is shown as observed', (_name, over, state, label) => {
         const html = render([member('executor', over)], view);
@@ -256,7 +263,7 @@ const THREE = [
 
 describe('SHAPE 1, runtime-only: a task with NO observed roster members and runtime identity rows is not empty, it LISTS them as unresolved', () => {
   for (const membersState of ['projected_reason', 'observed'] as const) {
-    for (const view of ['mission', 'list'] as const) {
+    for (const view of SURFACES) {
       it(`${view} view, roster ${membersState === 'observed' ? 'observed and empty' : 'not observed'}: the three records are listed, each in its OWN state, none drawn, none given a role, task, activity or live look`, () => {
         const state = stateWithRuntime([], THREE, membersState);
         const row = scanRowsFromOffice(state).find((r) => r.id === HERD)!;
@@ -306,7 +313,7 @@ describe('SHAPE 2, MIXED roster and runtime: neither path hides the other', () =
     runtimeRecord({ agentRef: 'src:abc#lead', logical: 'lead-record', agent: 'he-lead-record', session: 'sess-lead', paneId: 'w1:p-lead', identityState: 'unverified' }),
     runtimeRecord({ agentRef: 'src:abc#sup', logical: 'supervisor-record', agent: 'he-sup-record', session: 'sess-sup', paneId: 'w1:p-sup', identityState: 'ambiguous' }),
   ];
-  for (const view of ['mission', 'list'] as const) {
+  for (const view of SURFACES) {
     it(`${view} view: the roster roles show in the swarm (one confirmed, one replaced) AND the runtime-only records show in the listing, each exactly once`, () => {
       const state = stateWithRuntime(roster, runtimeOnly);
       const row = scanRowsFromOffice(state).find((r) => r.id === HERD)!;
@@ -328,6 +335,24 @@ describe('SHAPE 2, MIXED roster and runtime: neither path hides the other', () =
   }
 });
 
+describe('B2a: Home lists the Mission; Mission details lists its roles and runtime records', () => {
+  it('Home (the list, the Mission selected) draws no swarm, no identity label and no runtime-record listing: there is no second, partial copy', () => {
+    const roster = [member('executor'), member('reviewer', { classification: 'replaced', live: false, notLiveReason: 'x', agent: 'he-reviewer', sessionLive: observed('sess-other') })];
+    const records = [runtimeRecord({ agentRef: 'src:abc#lead', logical: 'lead-record', agent: 'he-lead-record', session: 'sess-lead', paneId: 'w1:p-lead', identityState: 'unverified' })];
+    const state = stateWithRuntime(roster, records);
+    const home = renderState(state, 'list');
+    expect(home).toContain('data-testid="di-scan-row"');
+    expect(swarmOf(home)).toBe('');
+    expect(labels(home)).toEqual([]);
+    expect(listingOf(home)).toBe('');
+    expect(home).not.toContain('data-testid="di-scan-unresolved-agent"');
+    // the same Mission docked: Mission details lists both paths, each exactly once, with Home on the page
+    const docked = renderState(state, 'mission');
+    expect(labels(docked)).toEqual(['replaced']);
+    expect(runtimeStates(listingOf(docked))).toEqual(['unverified']);
+  });
+});
+
 describe('SHAPE 3, SAME-SESSION records: NOTHING is suppressed. Both records show, each with its own state AND reason, and a name or pane never relates them', () => {
   const NONE = { state: 'not_recorded' as const, value: null, reason: null };
   const roster = (over: Partial<DiMember> = {}) => member('executor', { agent: 'he-exec', logical: 'exec1', sessionLive: observed('sess-1'), paneId: observed('w1:p1'), ...over });
@@ -335,7 +360,7 @@ describe('SHAPE 3, SAME-SESSION records: NOTHING is suppressed. Both records sho
   it('the SAME LIVE SESSION as a roster member that already shows an unresolved state: BOTH are shown (the record is not suppressed), with a cross-reference', () => {
     const ambiguousMember = roster({ classification: 'ambiguous', live: false, notLiveReason: 'x' });
     const dup = runtimeRecord({ agentRef: 'src:abc#dup', logical: 'exec1', agent: 'he-exec', session: 'sess-1', paneId: 'w1:p1', identityState: 'unverified' });
-    for (const view of ['mission', 'list'] as const) {
+    for (const view of SURFACES) {
       const state = stateWithRuntime([ambiguousMember], [dup]);
       const row = scanRowsFromOffice(state).find((r) => r.id === HERD)!;
       expect(row.unresolvedAgents?.map((a) => a.state)).toEqual(['unverified']);
@@ -356,7 +381,7 @@ describe('SHAPE 3, SAME-SESSION records: NOTHING is suppressed. Both records sho
       ['ambiguous', 'two_candidates', 'ambiguous', 'two_candidates'], // even the SAME state and reason: no inference, both shown
     ];
     for (const [classification, rosterReason, runtimeState, runtimeReason] of cases) {
-      for (const view of ['mission', 'list'] as const) {
+      for (const view of SURFACES) {
         const m = roster({ classification, reason: rosterReason, live: false, notLiveReason: 'x' });
         const record = runtimeRecord({ agentRef: 'src:abc#r', logical: 'exec1', agent: 'he-exec', session: 'sess-1', identityState: runtimeState, identityReason: runtimeReason });
         const name = `${classification}/${rosterReason} vs ${runtimeState}/${runtimeReason}, ${view}`;
@@ -378,7 +403,7 @@ describe('SHAPE 3, SAME-SESSION records: NOTHING is suppressed. Both records sho
 
   it('the same session as a CONFIRMED member is a DISAGREEMENT, not a duplicate: the unresolved record is NOT absorbed, both are shown, and its words say they disagree', () => {
     const dup = runtimeRecord({ agentRef: 'src:abc#dup', logical: 'exec1', agent: 'he-exec', session: 'sess-1', paneId: 'w1:p1', identityState: 'unverified' });
-    for (const view of ['mission', 'list'] as const) {
+    for (const view of SURFACES) {
       const state = stateWithRuntime([roster()], [dup]);
       const row = scanRowsFromOffice(state).find((r) => r.id === HERD)!;
       expect(row.swarm).toHaveLength(1);
@@ -393,7 +418,7 @@ describe('SHAPE 3, SAME-SESSION records: NOTHING is suppressed. Both records sho
   it('A NAME IS NOT EVIDENCE (the over-merge probe): a runtime record with the SAME agent and logical name as a confirmed member, but NO session, is a different, unresolved record and is LISTED', () => {
     // an unavailable identity very often names no session; absorbing it on a name match would show it under the confirmed member's stronger claim
     const nameOnly = runtimeRecord({ agentRef: 'src:abc#name', logical: 'exec1', agent: 'he-exec', session: null, paneId: null, identityState: 'unavailable' });
-    for (const view of ['mission', 'list'] as const) {
+    for (const view of SURFACES) {
       const state = stateWithRuntime([roster()], [nameOnly]);
       expect(scanRowsFromOffice(state).find((r) => r.id === HERD)!.unresolvedAgents?.map((a) => a.state)).toEqual(['unavailable']);
       expect(runtimeStates(listingOf(renderState(state, view)))).toEqual(['unavailable']);

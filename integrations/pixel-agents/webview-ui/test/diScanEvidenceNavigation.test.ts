@@ -61,6 +61,18 @@ const html = (row: DiScanRow, view: DiScanView, renderEvidence?: (ref: string) =
       renderEvidence: renderEvidence as never,
     }),
   );
+/** B2c: Mission details with "More actions" open: "Evidence and review" is one of its items (a closed popover's items are not in the markup). */
+const missionOpen = (row: DiScanRow, renderEvidence?: (ref: string) => unknown) =>
+  renderToStaticMarkup(
+    createElement(DiScanPanel, {
+      rows: [row],
+      initialSelectedId: row.id,
+      initialView: 'mission',
+      initialMoreActionsOpen: true,
+      onMinimize: () => undefined,
+      renderEvidence: renderEvidence as never,
+    }),
+  );
 const byTestid = (markup: string, id: string) => new RegExp(`<button[^>]*data-testid="${id}"[^>]*>([^<]*)</button>`).exec(markup);
 const text = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/\s+/g, ' ');
 
@@ -83,8 +95,10 @@ describe('the entrances', () => {
   const withLibrary = rows.find((r) => listed.includes(r.id))!;
   const without = rows.find((r) => unlisted.includes(r.id))!;
 
-  it('where one is listed and the library can be drawn: "Evidence and review" on Mission details, enabled', () => {
-    const details = byTestid(html(withLibrary, 'mission', probe), 'di-scan-evidence');
+  // CHANGED IN B2c (all three entrances): "Evidence and review" is an item of "More actions" on Mission details, read on the open render; HELD (aria-disabled,
+  // focusable) rather than natively disabled, its reason drawn in the item. BEFORE: a button in the action row, its reason in the notes row.
+  it('where one is listed and the library can be drawn: "Evidence and review" in More actions on Mission details, enabled', () => {
+    const details = byTestid(missionOpen(withLibrary, probe), 'di-scan-evidence');
     expect(details?.[1]).toBe(DI_EVIDENCE_LABEL);
     expect(details?.[0]).not.toContain('disabled');
   });
@@ -101,15 +115,15 @@ describe('the entrances', () => {
     }
   });
 
-  it('where none is listed: drawn disabled, saying so as visible text on Mission details', () => {
-    const markup = html(without, 'mission', probe);
-    expect(byTestid(markup, 'di-scan-evidence')?.[0]).toContain('disabled');
+  it('where none is listed: held, saying so as visible text in its item', () => {
+    const markup = missionOpen(without, probe);
+    expect(byTestid(markup, 'di-scan-evidence')?.[0]).toContain('aria-disabled="true"');
     expect(text(markup)).toContain(DI_EVIDENCE_NOT_LISTED);
   });
 
-  it('where the library cannot be drawn in this office: drawn disabled, saying so as visible text', () => {
-    const markup = html(withLibrary, 'mission');
-    expect(byTestid(markup, 'di-scan-evidence')?.[0]).toContain('disabled');
+  it('where the library cannot be drawn in this office: held, saying so as visible text in its item', () => {
+    const markup = missionOpen(withLibrary);
+    expect(byTestid(markup, 'di-scan-evidence')?.[0]).toContain('aria-disabled="true"');
     expect(text(markup)).toContain(DI_EVIDENCE_NOT_AVAILABLE);
   });
 

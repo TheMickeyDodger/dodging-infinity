@@ -102,7 +102,7 @@ const WORLD_OVERLAYS: Layer[] = [
   // and it stays below the covering workspace.
   // 30 is the stage inside the dock. 43 is the dock itself while Mission details (or a nested
   // screen) is open, so it covers agent labels (41/42) and stays under the covering workspace (44).
-  { file: 'components/diScanPanel.css', what: 'the scan click-in stage', z: [30, 43] },
+  { file: 'components/diScanPanel.css', what: 'the scan click-in stage (and, in one pane while a screen is open, the minimized-surface strip: 43, later in the document than the dock)', z: [30, 43] },
   // Deliverable 3: fixture mode's in-panel label on the scan face, its own strip across the top of the window, one above the click-in stage (30) so the
   // stage never paints over it. It is INSIDE the scan panel's own layer (the dock, 20, or 43 while a stage is open), so it sits BELOW the covering
   // workspace, which carries its own fixture label.
@@ -170,6 +170,19 @@ describe('the workspace sits in the window’s layers: above the world overlays 
     // the open stage spans the window from the rail's edge; under it, "Close requests" could not be clicked at 1440 x 900 (diScanRequestCloseBrowser.test.ts)
     expect(BESIDE_SCAN_OPEN).toBe(COVERING);
     expect(BESIDE_SCAN_OPEN).toBeGreaterThan(SCAN_STAGE_OPEN);
+  });
+
+  it('on the scan face, while a ONE-PANE screen is open, the minimized-surface strip takes the open screen\'s layer, later in the document than the dock so ABOVE it, and stays BELOW the covering workspace: its Restore controls stay reachable (B3; extends the strip\'s pin to the case it did not consider)', () => {
+    const css = read('components/diScanPanel.css');
+    const rule = /body:has\(\.di-scan\[data-stage='open'\]\[data-two-pane='false'\]:not\(\[hidden\]\)\) \.di-min-tray \{([\s\S]*?)\n\}/.exec(css);
+    expect(rule, 'the one-pane strip rule exists').not.toBeNull();
+    const z = /z-index:\s*(\d+)\s*;/.exec(rule![1]);
+    expect(z, 'it states a layer').not.toBeNull();
+    expect(Number(z![1])).toBe(SCAN_STAGE_OPEN);
+    expect(Number(z![1])).toBeLessThan(COVERING);
+    // equal layers paint in document order: the strip is rendered AFTER the office panel, so it is ABOVE the dock's layer
+    const app = read('App.tsx');
+    expect(app.indexOf('data-testid="di-minimized-tray"')).toBeGreaterThan(app.indexOf('<DiOfficePanel'));
   });
 
   it('covering the window, it is above EVERY world overlay (the legend, the agents’ labels, the controls)', () => {
@@ -270,6 +283,118 @@ describe('the workspace sits in the window’s layers: above the world overlays 
       }
     }
     expect(unclassified).toEqual([]);
+  });
+
+  // The anchored popover on the scan face (B2c; RESTATED for the Options menu, 1B/B3). Its own layer is ONE, 1 (diPopover.css), and LOCAL: it lifts the popover over the positioned content that FOLLOWS it
+  // inside the stacking context it sits in, and cannot reach between the window's groups. There are THREE popovers in TWO containers, and WHICH context holds the popover differs, so what must hold differs:
+  //   THE STAGE (`.di-scan-stage`: position fixed, layer 30): the Code Diff "More" and the Mission details "More actions". The stage is the context. It is a FIXED child of the dock, so its popovers are not
+  //     cut by the dock's overflow (measured: the Code Diff menu is drawn 255 px outside the dock's box, in the stage's own column) and reach the window's layers only as the DOCK: 20, or 43 while a screen is open.
+  //   THE MISSION-LIST OFFICE (the dock `.di-scan` itself): the list's "Options". NO stage between: the list wrapper, the header and its tools state no layer, position or other context-making property, so the
+  //     DOCK is the context, and the dock's own `overflow: hidden` bounds the popover to the dock's box. Inside the dock the positioned things that could paint over it are the rail (1, EARLIER in the document, so below
+  //     an equal layer) and the stage (30); the stage cannot hide an open Options popover because the list is `visibility: hidden` while a screen covers it (one pane), and beside the list at two panes (B2b).
+  //   The window's layers then bound all three: the dock closed (20) is BELOW the workspace beside it (21); while a screen is open the dock (43) is BELOW the workspace, which takes the covering layer (44) and so paints
+  //   over the dock and every popover in it. A new anchored popover on the scan face fails by NAME until it is classified here; it is never a count.
+  const SCAN_POPOVERS = [
+    { testid: 'di-scan-diff-more', container: 'stage' },
+    { testid: 'di-scan-more-actions', container: 'stage' },
+    { testid: 'di-scan-options', container: 'office' },
+  ] as const;
+  /** Every `<AnchoredPopover ...>` opening tag in a source (brace- and quote-aware, so a `=>` or a template literal inside a prop does not end the tag), with the testid the tag states. */
+  function popoverTags(source: string): Array<{ testid: string | null; at: number }> {
+    const found: Array<{ testid: string | null; at: number }> = [];
+    for (const m of source.matchAll(/<AnchoredPopover\b/g)) {
+      let depth = 0;
+      let quote: string | null = null;
+      let i = m.index + m[0].length;
+      for (; i < source.length; i += 1) {
+        const c = source[i]!;
+        if (quote !== null) {
+          if (c === quote && source[i - 1] !== '\\') quote = null;
+          continue;
+        }
+        if (c === '"' || c === "'" || c === '`') quote = c;
+        else if (c === '{') depth += 1;
+        else if (c === '}') depth -= 1;
+        else if (c === '>' && depth === 0) break;
+      }
+      found.push({ testid: /\btestid="([^"]+)"/.exec(source.slice(m.index, i))?.[1] ?? null, at: m.index });
+    }
+    return found;
+  }
+  /** The declaration text of EVERY rule whose selector list contains exactly this selector (one rule per block; at-rules are looked through). */
+  function declarationsOf(css: string, selector: string): string {
+    const out: string[] = [];
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g))
+      if (m[1]!.split(',').some((part) => part.trim() === selector)) out.push(m[2]!);
+    return out.join('\n');
+  }
+  /** Properties that make an element a stacking context or a clipping box of its own. */
+  const MAKES_A_CONTEXT = /(?:^|[;\s])(?:position|z-index|transform|filter|backdrop-filter|perspective|opacity|will-change|contain|isolation|mix-blend-mode|translate|rotate|scale|clip-path|mask|overflow)\s*:/;
+
+  it('the anchored popover states ONE layer, 1, and it is LOCAL: never portalled out of the container it is drawn in', () => {
+    expect(layersIn('components/diPopover.css')).toEqual([1]);
+    expect(1).toBeLessThanOrEqual(BESIDE);
+    expect(withoutComments(read('components/ui/AnchoredPopover.tsx')), 'drawn where its trigger is, never portalled out').not.toMatch(/createPortal/);
+    expect(declarationsOf(withoutComments(read('components/diPopover.css')), '.di-popover-anchor'), 'the anchor adds no layer of its own').not.toMatch(/z-index/);
+  });
+
+  it('every anchored popover on the scan face is classified by NAME in one of two containers (a new one fails here until it is; no count to bump)', () => {
+    const found = popoverTags(withoutComments(read('components/DiScanPanel.tsx')));
+    expect(found.filter((t) => t.testid === null).length, 'every popover states a testid, or it cannot be classified').toBe(0);
+    expect(found.map((t) => t.testid).sort()).toEqual(SCAN_POPOVERS.map((p) => p.testid).sort());
+  });
+
+  it('THE STAGE: its two popovers are drawn inside the stage, a fixed element that states its own layer (30), so each is local to the stage (the window sees it only as the dock, bounded in the last test below)', () => {
+    const panel = withoutComments(read('components/DiScanPanel.tsx'));
+    const css = withoutComments(read('components/diScanPanel.css'));
+    const stageAt = panel.indexOf('function Stage(');
+    const nextFn = panel.indexOf('\nfunction ', stageAt + 1);
+    const nextExport = panel.indexOf('\nexport function ', stageAt + 1);
+    const stageEnd = Math.min(...[nextFn, nextExport].filter((i) => i > -1));
+    expect(stageAt > -1 && stageEnd > stageAt, 'the Stage function is found').toBe(true);
+    const tags = popoverTags(panel);
+    for (const use of SCAN_POPOVERS.filter((p) => p.container === 'stage')) {
+      const at = tags.find((t) => t.testid === use.testid)?.at ?? -1;
+      expect(at > stageAt && at < stageEnd, `${use.testid} is drawn inside the Stage`).toBe(true);
+    }
+    const stage = declarationsOf(css, '.di-scan-stage');
+    expect(stage, 'the stage is positioned, so it is its own containing block (its popovers are not cut by the dock)').toMatch(/position:\s*fixed;/);
+    expect(stage, "the stage states its own layer, so it is its popovers' stacking context").toMatch(/z-index:\s*30;/);
+  });
+
+  it('THE MISSION-LIST OFFICE: its Options popover has NO stage and no context-making ancestor between it and the dock, so the dock (20; 43 while a screen is open) is its context and bounds it', () => {
+    const panel = withoutComments(read('components/DiScanPanel.tsx'));
+    const css = withoutComments(read('components/diScanPanel.css'));
+    const stageAt = panel.indexOf('function Stage(');
+    const nextFn = panel.indexOf('\nfunction ', stageAt + 1);
+    const nextExport = panel.indexOf('\nexport function ', stageAt + 1);
+    const stageEnd = Math.min(...[nextFn, nextExport].filter((i) => i > -1));
+    const homeAt = panel.indexOf('className="di-scan-home"');
+    const at = popoverTags(panel).find((t) => t.testid === 'di-scan-options')?.at ?? -1;
+    expect(homeAt > -1 && at > homeAt, 'the Options popover is drawn inside the Mission list (the home wrapper)').toBe(true);
+    expect(at < stageAt || at > stageEnd, 'and NOT inside the Stage').toBe(true);
+    // between the popover and the dock: the list wrapper, the header and its tools, and the popover anchor state no layer, position or clipping box of their own
+    for (const selector of ['.di-scan-home', '.di-scan-header', '.di-scan-header-tools'])
+      expect(declarationsOf(css, selector), `${selector} makes no stacking context or clipping box of its own`).not.toMatch(MAKES_A_CONTEXT);
+    // the dock is the context, states its layer, and bounds what is drawn in it
+    const dock = declarationsOf(css, '.di-scan');
+    expect(dock, 'the dock is positioned').toMatch(/position:\s*fixed;/);
+    expect(dock, 'the dock states its closed layer').toMatch(/z-index:\s*20;/);
+    expect(dock, "the dock bounds what is drawn in it (the popover's frame keeps the menu inside)").toMatch(/overflow:\s*hidden;/);
+    expect(declarationsOf(css, ".di-scan[data-stage='open']"), 'the dock takes the open screen\'s layer while a screen is open').toMatch(new RegExp(`z-index:\\s*${SCAN_STAGE_OPEN};`));
+    // what could paint over it inside the dock: the rail (an EQUAL layer EARLIER in the document, so below it) and the stage (the list is hidden while a screen covers it)
+    expect(declarationsOf(css, '.di-rail')).toMatch(/z-index:\s*1;/);
+    expect(panel.indexOf('<Rail'), 'the rail is rendered BEFORE the list, so at an equal layer the popover is above it').toBeGreaterThan(-1);
+    expect(panel.indexOf('<Rail')).toBeLessThan(homeAt);
+    expect(declarationsOf(css, ".di-scan-home[data-covered='true']"), 'a covered list, and so its open popover, is not drawn under the stage').toMatch(/visibility:\s*hidden;/);
+    expect(panel, 'the list is covered exactly when a screen is open on ONE pane').toContain("data-covered={view === 'list' || twoPane ? undefined : 'true'}");
+  });
+
+  it('THE WINDOW BOUNDS BOTH CONTAINERS: the dock is below the workspace beside it, and the dock open on a screen (43) is below the workspace that then takes the covering layer', () => {
+    const dockClosed = Number(/z-index:\s*(\d+);/.exec(declarationsOf(withoutComments(read('components/diScanPanel.css')), '.di-scan'))?.[1]);
+    expect(dockClosed, "the dock's closed layer is below the workspace beside it, so no popover in it can paint over the workspace").toBeLessThan(BESIDE);
+    expect(SCAN_STAGE_OPEN, "the dock's layer while a screen is open is below the workspace's covering layer").toBeLessThan(COVERING);
+    expect(BESIDE_SCAN_OPEN, 'and the workspace beside an open screen takes that covering layer, ABOVE the dock and every popover in it').toBeGreaterThan(SCAN_STAGE_OPEN);
   });
 
   it('every classified layer is still stated where it was (the table is not stale)', () => {

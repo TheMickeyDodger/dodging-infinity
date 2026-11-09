@@ -236,6 +236,7 @@ export function ProposalView({
   source,
   meanings,
   heading,
+  level,
   testId = 'di-mr-proposal',
   showSource = true,
   sourceStanding,
@@ -244,15 +245,22 @@ export function ProposalView({
   source: SourceIdentity;
   meanings: Record<string, string>;
   heading: string;
+  /**
+   * The heading's level in the PAGE's outline, set by the caller from where the proposal sits: 3 under a section heading (New Mission's "This conversation", the
+   * workspace's own title), 4 under a request's title. The proof rules' sub-headings sit one level below it. Explicit, never a default: a level that is right under
+   * one heading skips one under another.
+   */
+  level: 3 | 4;
   testId?: string;
   /** False where the exact references are shown in their own disclosure instead of as the last field. */
   showSource?: boolean;
   /** New Mission's card: the Source line in the tense its submission makes true (see SourceFacts). */
   sourceStanding?: ReactNode;
 }) {
+  const Heading = level === 3 ? 'h3' : 'h4';
   return (
     <section className="di-mr-section" aria-label={heading} data-testid={testId}>
-      <h4>{heading}</h4>
+      <Heading className="di-mr-proposal-heading">{heading}</Heading>
       <dl className="di-mr-fields">
         <div>
           <dt>What you asked for</dt>
@@ -305,7 +313,11 @@ export function ProposalView({
         <div>
           <dt>What counts as done (the proof rules)</dt>
           <dd>
-            <ProofRules proof={proposal.proof} testId={`${testId}-rules`} />
+            <ProofRules
+              proof={proposal.proof}
+              testId={`${testId}-rules`}
+              level={level === 3 ? 4 : 5}
+            />
           </dd>
         </div>
         {showSource && (
@@ -355,9 +367,18 @@ export function StartCauseView({ cause, closed }: { cause: MrStartCause; closed:
 /**
  * The proof rules, every one, as plain sentences in sections; or, when they cannot be shown in full, the
  * plain statement that approving is refused. Never a summary that could read the same for two different
- * contracts, and never silence.
+ * contracts, and never silence. `level` is the level of the sections' sub-headings (one below the heading it sits under), set by the caller.
  */
-export function ProofRules({ proof, testId }: { proof: MrProofRules; testId: string }) {
+export function ProofRules({
+  proof,
+  testId,
+  level,
+}: {
+  proof: MrProofRules;
+  testId: string;
+  level: 4 | 5;
+}) {
+  const Sub = level === 4 ? 'h4' : 'h5';
   if (proof.contract === null) {
     return (
       <div
@@ -373,7 +394,7 @@ export function ProofRules({ proof, testId }: { proof: MrProofRules; testId: str
     <div className="di-mr-rules" data-testid={testId} data-represented="true">
       {proofRuleParts(proof.contract).map((section) => (
         <div key={section.title} className="di-mr-rule-section">
-          <h5>{section.title}</h5>
+          <Sub className="di-mr-rules-heading">{section.title}</Sub>
           <ul>
             {section.lines.map((line, index) => (
               <li key={index}>

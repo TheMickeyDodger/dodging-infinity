@@ -15,7 +15,7 @@
   gap: 14px;
   width: 100%;
   max-width: 1120px;
-  padding: 22px 28px 32px;
+  padding: var(--di-layout-1) var(--di-layout-2) var(--di-layout-2);
   color: var(--di-scan-text);
   font-size: 13px;
   line-height: 1.4;
@@ -42,7 +42,7 @@
 .di-page-title {
   margin: 0;
   color: var(--di-scan-heading);
-  font-size: 20px;
+  font-size: var(--di-text-title);
   font-weight: 600;
   line-height: 1.2;
 }
@@ -55,6 +55,11 @@
   margin: 0;
   color: var(--di-scan-muted);
   font-size: 12px;
+}
+/* New Mission's two prose lines that wrapped to a lone last word ("Start.", "time."): the browser balances the LAST LINE of these two only. No width cap, no copy change. */
+.di-page-sub,
+.di-new-elsewhere .di-page-note {
+  text-wrap: pretty;
 }
 .di-page-empty {
   margin: 8px 0;
@@ -169,6 +174,16 @@
   cursor: not-allowed;
   opacity: 0.55;
 }
+/* 1A: a HELD control (aria-disabled, never `disabled`: it keeps its focus) is never drawn as an available one, primary or not. It takes the secondary outline, dashed, in the muted text, as the
+   request workspace draws its held controls (diMissionRequest.css). Specificity beats `.di-page-primary` and its hover, so the fill and the hover fill do not apply while held. */
+.di-page-button[aria-disabled='true'],
+.di-page-button[aria-disabled='true']:hover:not(:disabled) {
+  border-color: var(--di-scan-edge);
+  border-style: dashed;
+  background: transparent;
+  color: var(--di-scan-muted);
+  cursor: not-allowed;
+}
 .di-page-back {
   appearance: none;
   display: inline-flex;
@@ -221,7 +236,7 @@
   color: var(--di-scan-muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--di-label-tracking);
   text-align: left;
   text-transform: uppercase;
 }
@@ -274,7 +289,7 @@
 .di-phase-seg {
   width: 18px;
   height: 3px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--di-scan-line);
 }
 .di-phase-seg[data-state='done'] {
@@ -399,8 +414,101 @@ button.di-reception-title {
 
 /* ---------- New Mission and the proposal ---------- */
 
+/* B2e: New Mission is no longer capped at the old single column's 760px. The conversation takes what remains beside the Recent pane (the .di-page
+   cap of 1120px still applies). The page fills the stage's height so each pane scrolls inside itself; the foot sits at the bottom as before. */
 .di-new {
-  max-width: 760px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 0;
+}
+/* B2e (Direction B, the selected handoff): Recent in a LEFT pane with its pick drawn, the conversation docked beside it. Allocation (the Lead's): the
+   pane 187px, the gap 24px (--di-layout-1); the conversation takes the remainder: 696px at 1600x1000 (the old column, preserved), 536px at 1440x900
+   (160px LESS than the old 696px column: a disclosed cost), 804px at 1280x800 (the Mission list is covered there). These are the widths with NOTHING minimized: with a surface
+   minimized the screen yields the minimized-surface strip (44px), and the conversation, which takes the remainder, is 44px less (B3). */
+.di-new-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 187px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: var(--di-layout-1);
+}
+.di-new-main {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+}
+.di-new-main-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.di-new-side {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Recent's asks are one per row, and their words WRAP: a 120-character ask (the panel's cap) needs ~796px on one line. The fixed 32px height of
+   .di-chip goes here, staying as the minimum; the type size is unchanged. */
+.di-new-side .di-new-recent {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-self: stretch;
+}
+.di-new-side .di-chip {
+  width: 100%;
+  height: auto;
+  min-height: 32px;
+  padding-block: 6px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+/* the pick is DRAWN (it was only announced): the list's own selected-row treatment (B2a, .di-scan-row[aria-current]) */
+.di-new-side .di-chip[aria-current='true'] {
+  border-color: var(--di-scan-yellow);
+  background: var(--di-scan-selected);
+  color: var(--di-scan-text);
+}
+/* B2e correction (F4, the Lead's option A): while the request workspace holds the ask, it is docked over the stage's right ABOVE it by design
+   (diMissionRequest.css), so the panes SWAP columns: the conversation returns to the old single column's left edge and "Bring the ask back here" to where
+   it stood before the split (measured on the pre-split bytes: x 233-407; exposed at 1440 and 1600, covered at 1280 before the split too). Recent is under
+   the workspace meanwhile. DOM and Tab order are unchanged. A stacked stage (below) ignores both. */
+.di-new-body[data-ask='elsewhere'] {
+  grid-template-columns: minmax(0, 1fr) 187px;
+}
+.di-new-body[data-ask='elsewhere'] .di-new-main {
+  grid-column: 1;
+}
+.di-new-body[data-ask='elsewhere'] .di-new-side {
+  grid-column: 2;
+}
+/* A stage too narrow for two panes stacks them, and the page scrolls as one column again. Under 604px: the 187px pane, the 24px gap, the
+   conversation's measured 329px min-content and the page's 64px padding. Method rule 7: this fallback is verified RENDERED, below its threshold. */
+@container scanstage (width < 604px) {
+  .di-new {
+    flex: none;
+    padding-bottom: var(--di-layout-2);
+  }
+  .di-new-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .di-new-main-scroll,
+  .di-new-side {
+    overflow-y: visible;
+  }
 }
 .di-new-section {
   display: flex;
@@ -435,12 +543,12 @@ button.di-reception-title {
 }
 .di-new-harness-tag {
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--di-radius-sm);
   background: var(--di-scan-badge);
   color: var(--di-scan-text);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--di-label-tracking);
   text-transform: uppercase;
 }
 .di-new-box {
@@ -524,6 +632,13 @@ button.di-reception-title {
   font-size: 13px;
   font-weight: 600;
 }
+/* The drafted proposal's heading is an h3 under "This conversation" (its level comes from the caller); it is drawn as the h4 was. */
+.di-new-thread .di-mr-proposal-heading {
+  margin: 0;
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+}
 .di-new-thread code {
   font-family: var(--di-font-code);
 }
@@ -566,7 +681,7 @@ button.di-reception-title {
   gap: 10px;
   margin: 0;
   color: var(--di-scan-text);
-  font-size: 16px;
+  font-size: var(--di-text-read);
   font-weight: 600;
 }
 /* F2 (review round 1): what came of Send, under the ask it kept (the region is always present so an outcome is announced; empty, it takes no space) */
@@ -603,9 +718,9 @@ button.di-reception-title {
 .di-new-foot kbd {
   padding: 1px 5px;
   border: 1px solid var(--di-scan-line);
-  border-radius: 4px;
+  border-radius: var(--di-radius-sm);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--di-text-sm);
 }
 
 .di-proposal {
@@ -647,7 +762,7 @@ button.di-reception-title {
 .di-proposal-card-head h3 {
   margin: 0;
   color: var(--di-scan-heading);
-  font-size: 15px;
+  font-size: var(--di-text-read);
   font-weight: 600;
 }
 .di-proposal-card-head .di-page-tag {
@@ -759,7 +874,7 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
 .di-scan-comments-view .di-scan-comments-title {
   margin: 4px 0 8px;
   color: var(--di-scan-heading);
-  font-size: 20px;
+  font-size: var(--di-text-title);
   font-weight: 600;
 }
 .di-scan-comments-view .di-scan-comments-sub {
@@ -773,7 +888,7 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
   display: flex;
   flex-direction: column;
   gap: 17px;
-  margin: 14px 0 22px;
+  margin: 14px 0 var(--di-layout-1);
   padding: 0;
   list-style: none;
 }
@@ -808,7 +923,7 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
 }
 .di-scan-comment-when {
   color: var(--di-scan-muted);
-  font-size: 11px;
+  font-size: var(--di-text-sm);
 }
 .di-scan-comments-view .di-scan-comment-text {
   color: var(--di-scan-muted);
@@ -818,7 +933,7 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
 }
 /* the v3 page's content starts 28 px from the rail */
 .di-scan-comments-view {
-  padding-left: 28px;
+  padding-left: var(--di-layout-2);
 }
 .di-scan-comments-view .di-scan-comments-paid {
   display: flex;
@@ -834,11 +949,11 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
 .di-scan-comments-paid-tag {
   padding: 1px 6px;
   border: 1px solid var(--di-scan-line);
-  border-radius: 4px;
+  border-radius: var(--di-radius-sm);
   color: var(--di-scan-text);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--di-label-tracking);
   text-transform: uppercase;
 }
 
@@ -946,8 +1061,21 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
 .di-scan-stage {
   --stage-hdr-k: 1;
 }
-@media (max-width: 1499px) {
-  .di-scan-stage {
+/* F-b (B2b, OPEN INTRODUCED), the Lead's ruling T3, after T2 was MEASURED to break the pixel-lock 02 / 03 reference checks at 1672 (fb-T2-*-chrome.log).
+   The header's scale follows the ROOM it is drawn in, not the window:
+   - ONE PANE: compact, keyed to the panes STATE the docking already drives (`.di-scan-body[data-panes]`, the same state that sets the stage's right edge),
+     never a second copy of the 1440 breakpoint. Exactly the old window rule: every one-pane window is under 1500.
+   - TWO PANES: compact while the docked stage's content box is under 1015 px, locked from there. The threshold is FIT-DERIVED and recorded as such:
+     the locked header's measured minimum one-row content (981 px, Archived, the longest label) plus the bar's padding at the locked scale (33.5 px).
+     No design reference exists for a docked layout, so there is nothing to derive it from but measurement. It is not a design value.
+   The value is set on the stage's CHILDREN in the container query (a container query never styles its own container) and inherits from there; every
+   reader of --stage-hdr-k is a descendant of the stage. NOT changed here (a named same-class instance, carried to B2d): the Code Diff BODY's
+   window-keyed `@media (min-width: 1500px)` block below. */
+.di-scan-body[data-panes='one'] .di-scan-stage {
+  --stage-hdr-k: 0.72;
+}
+@container scanstage (width < 1015px) {
+  .di-scan-body[data-panes='two'] .di-scan-stage > * {
     --stage-hdr-k: 0.72;
   }
 }
@@ -1002,17 +1130,9 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
   width: calc(44px * var(--stage-hdr-k));
   height: calc(44px * var(--stage-hdr-k));
 }
-.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='Find a file'] svg {
-  width: calc(38px * var(--stage-hdr-k));
-  height: calc(38px * var(--stage-hdr-k));
-}
-.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='Copy the diff'] svg {
+.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='Copy the lines shown'] svg {
   width: calc(41px * var(--stage-hdr-k));
   height: calc(41px * var(--stage-hdr-k));
-}
-.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='Settings'] svg {
-  width: calc(33px * var(--stage-hdr-k));
-  height: calc(33px * var(--stage-hdr-k));
 }
 .di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='More'] svg {
   width: calc(36px * var(--stage-hdr-k));
@@ -1120,72 +1240,47 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
   margin: 4px 16px;
 }
 
-/* B-V1: at the pixel-lock size (1500 px and wider; measured at 1672 x 941 against pixel-lock 03) the diff editor, the
-   file tree and the status bar take the reference's scale: code rows 39 px apart, file rows 44 px, the status bar 82 px
-   tall. Below 1500 px the v3 06 compact scale stays (the same breakpoint Mission details uses). */
-@media (min-width: 1500px) {
-  .di-scan-tree {
-    width: 354px;
-  }
-  .di-scan-tree-head {
+/* B-V1 (pixel-lock 03), at 1500 px and wider. B2b: the TYPE is DESIGN.md's ramp at every width, so this block no longer sets a size, a px
+   line-height or a box sized only by its text (rows, the editor bar, the select, the numeral columns, the status bar's height). What remains is
+   kept as it was (not forced by the ramp): the tree's width, container paddings and gaps, and the row and column rules. See b2b-record.md. */
+/* B2d (#4 folded in, the Lead's ruling (E)): the Code Diff BODY was keyed to the WINDOW (`@media (min-width: 1500px)`) while its room is the STAGE, the
+   class F-b fixed in the header. Re-keyed on F-b's T3 pattern AND threshold (two panes, a stage 1015px or wider): ONE source for the docked question. One
+   pane never matched the old rule and does not move. `:where()` keeps every selector's specificity as it was, so the cascade is unchanged.
+   The TREE's width is a RAMP, not a step: 340px up to a 1015px stage, then growing 1:1 with it to the reference 354px at 1029px. A step would take 14px
+   from the code at the threshold; the ramp keeps the code channel from ever shrinking as the window grows (monotonic, measured across the full width set). */
+:where(.di-scan-body[data-panes='two']) .di-scan-tree {
+  width: clamp(340px, calc(340px + (100cqw - 1015px)), 354px);
+}
+@container scanstage (width >= 1015px) {
+  :where(.di-scan-body[data-panes='two']) .di-scan-tree-head {
     padding: 30px 24px 16px;
-    font-size: 20px;
   }
-  .di-scan-tree-row {
-    min-height: 44px;
-    gap: 12px;
-    font-size: 22px;
-  }
-  .di-scan-tree-row svg {
-    width: 20px;
-    height: 20px;
-  }
-  .di-scan-editor-bar {
-    min-height: 79px;
-    padding: 0 18px;
-  }
-  .di-scan .di-scan-editor-path {
-    font-size: 22px;
-  }
-  .di-scan-unified select {
-    height: 48px;
-    padding: 0 14px;
-    font-size: 20px;
-  }
-  .di-scan-editor-body {
+  :where(.di-scan-body[data-panes='two']) .di-scan-editor-body {
     padding: 0 0 16px;
-    font-size: 20px;
-    line-height: 39px;
   }
   /* the reference leaves an 11 px gap under the Old/New row before the first code row */
-  .di-scan-gutter-head {
+  :where(.di-scan-body[data-panes='two']) .di-scan-gutter-head {
     margin-bottom: 14px;
   }
-  .di-scan-gutter-head,
-  .di-scan-diff-line {
-    grid-template-columns: 67px 67px minmax(0, 1fr);
-  }
-  .di-scan-gutter-head {
-    min-height: 42px;
-    padding: 0;
-    font-size: 16px;
-  }
-  .di-scan-diff-line {
-    min-height: 39px;
-    /* the row separator, drawn INSIDE the row so the 39 px stride does not move; one under the last row too */
+  :where(.di-scan-body[data-panes='two']) .di-scan-diff-line {
+    /* the row separator, drawn INSIDE the row so it adds no height; one under the last row too */
     box-shadow: inset 0 -1px 0 var(--di-line-soft);
   }
   /* the gutter's column rules (Old | New | code), also inset */
-  .di-scan-diff-line .di-scan-ln,
-  .di-scan-gutter-head > span:nth-child(-n + 2) {
+  :where(.di-scan-body[data-panes='two']) .di-scan-diff-line .di-scan-ln,
+  :where(.di-scan-body[data-panes='two']) .di-scan-gutter-head > span:nth-child(-n + 2) {
     box-shadow: inset -1px 0 0 var(--di-scan-line);
   }
-  .di-scan-statusbar {
-    height: 82px;
+  :where(.di-scan-body[data-panes='two']) .di-scan-statusbar {
     gap: 32px;
     padding: 0 24px;
-    font-size: 21px;
   }
+}
+
+/* B2b (F1): the marker for an invisible character in a Recent ask (`.di-mr-ctl`, shared with the request workspace, where it is 0.9em) computed 11.7 px
+   inside the stage, off the scale (inherited at HEAD). It is set in the code face, so in the stage it takes the code step. The workspace is not touched. */
+.di-scan-stage .di-mr-ctl {
+  font-size: var(--di-text-sm);
 }
 
 /* ---------- Deliverable 3: a narrow stage (a narrow window, beside the rail) ----------
@@ -1193,7 +1288,7 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
    status, then each fact under its own column's word, from the cell's data-label), so the status is never past the stage's edge. */
 @container scanstage (max-width: 599px) {
   .di-page {
-    padding: 16px 12px 24px;
+    padding: 16px 12px var(--di-layout-1);
   }
   /* a filter chip keeps its word and its count inside its own edge: one line where it fits, wrapped inside the chip (which grows) where not */
   .di-chip {
@@ -1253,7 +1348,7 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
     color: var(--di-scan-muted);
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: var(--di-label-tracking);
     text-transform: uppercase;
   }
 }

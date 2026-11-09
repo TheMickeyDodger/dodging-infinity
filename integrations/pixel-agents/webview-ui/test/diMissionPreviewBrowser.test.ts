@@ -341,6 +341,14 @@ async function snap(name: string, scene: string, viewport: Viewport, measured: u
   });
 }
 
+/** B2c: Comments, Evidence and review and Herdr are items of Mission details' "More actions" (an anchored, non-modal popover); open it, unless it is
+ *  open, to read or use one. A held item is aria-disabled (and stays focusable), never natively disabled. */
+async function openMore(): Promise<void> {
+  if ((await p().locator('[data-testid="di-scan-more-actions-popover"]').count()) === 0) await p().click('[data-testid="di-scan-more-actions"]');
+  await p().waitForSelector('[data-testid="di-scan-more-actions-popover"]');
+}
+const heldNow = async (selector: string) => (await p().locator(selector).getAttribute('aria-disabled')) === 'true';
+
 test('ONE PATH: the docs give exactly the commands this test ran, and the scene index it serves lists every scene and opens nothing', async () => {
   const docs = fs.readFileSync(DOCS, 'utf-8');
   for (const command of [PREVIEW_BUILD_COMMAND, PREVIEW_SERVE_COMMAND]) assert.ok(docs.includes(command.join(' ')), `the docs quote \`${command.join(' ')}\``);
@@ -577,7 +585,10 @@ test('FILED AT ONCE, READ-ONLY: the finished Mission leaves every filter but Arc
   // exactly above; it was also Herdr's line and a third time in the state reasons), and Herdr's line gives the same reason in its own short words
   const sentences = await p().locator(sel('di-scan-stage')).evaluate((el, words) => (el as HTMLElement).innerText.split(words).length - 1, ARCHIVED_READ_ONLY);
   assert.equal(sentences, 1, 'the read-only sentence is drawn once');
-  assert.equal(await p().locator(sel('di-scan-herdr')).isDisabled(), true, 'Herdr is disabled');
+  // CHANGED IN B2c: Herdr is an item of "More actions", HELD (aria-disabled) on an archived Mission; BEFORE: a natively disabled button in the action row
+  await openMore();
+  assert.equal(await heldNow(sel('di-scan-herdr')), true, 'Herdr is held');
+  await p().keyboard.press('Escape');
   // the archived reason EXACTLY (Herdr's words), and beside it only the one child the product offers there: "Check again", a re-read of the Herdr status
   // (diHerdrModel.ts canRecheck; a status read, never an action: archived is read-only, not information-erasing)
   const reason = await p().locator(sel('di-scan-herdr-reason')).evaluate((el) => {

@@ -40,6 +40,7 @@ import {
   DI_DRAFT_OPEN_LABEL,
   DI_NEW_MISSION_OFFICE,
   DI_NEW_MISSION_SPECIMEN,
+  DI_NEW_READ_AGAIN,
   DI_ORCHESTRATOR_LIMIT,
   DI_RECENT_NONE,
   DI_RECENT_NOT_READ,
@@ -90,6 +91,7 @@ const seam = (state: MrState): DiNewMissionRequest => ({
   setComposer: noop,
   sendTurn: noop,
   newConversation: noop,
+  closeConversation: noop,
   readConversation: noop,
   watchConversation: noop,
   openAsk: noop,
@@ -121,6 +123,9 @@ describe('Send: why it is off, the rule that holds first (AC-4.3-14/-18/-49)', (
     expect(sendAskReason('Fix it', none, 'reading')).toBe(DI_ASK_READING);
     expect(sendAskReason('Fix it', none, 'unread')).toBe(DI_ASK_UNREAD);
     expect(DI_ASK_UNREAD.toLowerCase()).toContain(DI_ASK_LEAVE_UNREAD.toLowerCase());
+    // B2e: it names the labelled way to read it again word for word, and no longer sends a person to Recent (whose selected ask now closes it)
+    expect(DI_ASK_UNREAD.toLowerCase()).toContain(DI_NEW_READ_AGAIN.toLowerCase());
+    expect(DI_ASK_UNREAD).not.toMatch(/in Recent/);
     expect(sendAskReason('Fix it', none, 'busy')).toBe(DI_ASK_BUSY);
     expect(sendAskReason('x'.repeat(MR_MAX_TEXT_CHARS + 1), none, 'ready')).toMatch(/longer than/);
     expect(sendAskReason('Fix it', none, 'ready')).toBeNull();

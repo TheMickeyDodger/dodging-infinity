@@ -31,7 +31,9 @@
   /* type-checked by tsconfig.test-dom.json, which adds the DOM lib (and JSX) for the renderers (item 18: cityWeather and cityPersistence
      drive the real OfficeState and the test hooks, which import the renderer; they are listed in BOTH places on purpose, excluded here and
      included there, so none is left unchecked); the two living-city browser tests are type-checked by tsconfig.test-city.json (DOM lib, and
-     the real server handler they import) */
+     the real server handler they import), and the tests that import the office's server modules by tsconfig.test-mission.json (the same
+     options as test-city, so which of the two is a convention, not a technical constraint). Which program: test/diTypecheckCoverage.test.ts
+     prints the rule, and FAILS on any test source no program builds. */
   "exclude": [
     "test/cityWeather.test.ts",
     "test/cityPersistence.test.ts",
@@ -99,6 +101,42 @@
     "test/diScanOneComposerBrowser.test.ts",
     "test/diScanPopulatedDetailsBrowser.test.ts",
     "test/diScanNewMissionStatesBrowser.test.ts",
+    "test/diScanNewMissionDismissBrowser.test.ts",
+    "test/diEscapeLayersBrowser.test.ts",
+    "test/diScanB2aHomeBrowser.test.ts",
+    "test/diScanB2bLayoutBrowser.test.ts",
+    "test/diScanB2bResizeFocusBrowser.test.ts",
+    "test/diScanB2cMoreActionsBrowser.test.ts",
+    "test/diPopoverPlacement.test.ts",
+    "test/diScanMapKeysMeasureBrowser.test.ts",
+    "test/diK1MeasureBrowser.test.ts",
+    "test/diK1KeyboardOwnershipBrowser.test.ts",
+    "test/diK1CoverProbeBrowser.test.ts",
+    "test/diK1LabelFocusMeasureBrowser.test.ts",
+    "test/diB2dMeasureBrowser.test.ts",
+    "test/diB2dAvatarAttribBrowser.test.ts",
+    "test/diB2dCollapseBrowser.test.ts",
+    "test/diB2dArrowStateBrowser.test.ts",
+    "test/diB2bAvatarSquareBrowser.test.ts",
+    "test/diB2eMeasureBrowser.test.ts",
+    "test/diB2eMeasure2Browser.test.ts",
+    "test/diB2eSplitBrowser.test.ts",
+    "test/diB2eMeasure3Browser.test.ts",
+    "test/diB2eMeasure4Browser.test.ts",
+    "test/diB2eMeasure5Browser.test.ts",
+    "test/diB3HierarchyBrowser.test.ts",
+    "test/diB3MenusBrowser.test.ts",
+    "test/diB3CodeDiffMenuBrowser.test.ts",
+    "test/diB3StatesRequestBrowser.test.ts",
+    "test/diB3StatesCodeDiffBrowser.test.ts",
+    "test/diB3RoutesMapBrowser.test.ts",
+    "test/diB3WrapBrowser.test.ts",
+    "test/diB3ComposedBarBrowser.test.ts",
+    "test/diB3TrayRestoreBrowser.test.ts",
+    "test/diScanFbHeaderMeasureBrowser.test.ts",
+    "test/diPopoverInModalBrowser.test.ts",
+    "test/diPopoverInModalGuard.test.ts",
+    "test/diPopoverFrameBrowser.test.ts",
     "test/diScanHerdrLineBrowser.test.ts",
     "test/diScanRequestCloseBrowser.test.ts",
     "test/diArchivedDeliveryBrowser.test.ts",

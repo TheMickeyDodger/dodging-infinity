@@ -46,6 +46,8 @@ cloudflared.log
 # Authorization records. No tracked or historical path uses these names. Generic names such as settings.json
 # (tracked in the Pixel subtree), layout.json or state.json are deliberately NOT ignored.
 config.json
+# The one exception: Impeccable's project config at the repository root (no secrets; updateCheck/stalenessCheck), which later herds must inherit.
+!/.impeccable/config.json
 runtime-config.json
 tunnel.json
 capabilities.json

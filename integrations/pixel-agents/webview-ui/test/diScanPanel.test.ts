@@ -135,7 +135,10 @@ test('the locked specimen matches the mock list on Open and the attention badge'
 // Superseded in part (pass A, V-6): the footer's 'Clear all' hid every shown Mission at once, a bulk hide that the locked
 // rule "trash = Mission delete only (icon bottom-right; no Clear finished text)" forbids. The footer is gone; the only
 // delete affordance is the per-Mission trash, whose gating diScanMissionDetails.test.ts and diScanMissionModel.test.ts hold.
-test('the scan chrome renders the locked header, tabs and detail; New and Reception live only in the rail; no bulk Clear all', () => {
+// CHANGED IN B2a-PA1 (a post-acceptance coverage migration of B2a, test only): this test read Home's inline expanded card, which B2a removed (Q8 = (a):
+// one click docks). Its card-only words (the swarm's names, the Supervisor role word, the meta line) are not lost: they are in the same Mission's
+// docked details, checked below. Home keeps its header, tabs, search, row and pills, and draws none of the card's words. B2a never ran this file.
+test('the scan chrome renders the locked header and tabs on Home, and the Mission\'s swarm and meta line in its details; New and Reception live only in the rail; no bulk Clear all', () => {
   const html = renderToStaticMarkup(
     createElement(DiScanPanel, {
       rows: DI_SCAN_LOCK,
@@ -153,15 +156,20 @@ test('the scan chrome renders the locked header, tabs and detail; New and Recept
     'Needs you',
     // review finding 5: the current specimen says the contract's word
     'Running',
-    'Ken',
-    'Leo',
-    'Mia',
-    'Sam',
-    'Supervisor',
-    `PR #${'4821'} · CI passed on D7 · 2h ago`,
   ]) {
     assert.ok(html.includes(text), `missing ${text}`);
   }
+  const CARD_ONLY = ['Ken', 'Leo', 'Mia', 'Sam', 'Supervisor', `PR #${'4821'} · CI passed on D7 · 2h ago`];
+  for (const text of CARD_ONLY) assert.equal(html.includes(text), false, `Home draws no card word: ${text}`);
+  const details = renderToStaticMarkup(
+    createElement(DiScanPanel, {
+      rows: DI_SCAN_LOCK,
+      initialSelectedId: DI_SCAN_LOCK[0]?.id,
+      initialView: 'mission',
+      onMinimize: () => undefined,
+    }),
+  );
+  for (const text of CARD_ONLY) assert.ok(details.includes(text), `Mission details carries the card's word: ${text}`);
   assert.equal(html.includes('Clear finished'), false);
   assert.equal(html.includes('+ NEW MISSION'), false);
   assert.equal(html.includes('>RECEPTION<'), false);
@@ -193,11 +201,26 @@ test('mission details, the code diff and comments open from the locked row; Herd
     'All clear. No blockers.',
     'Drafting structure.',
     '>Code Diff<',
-    '>Herdr<',
-    '>Comments<',
+    '>More actions<',
   ]) {
     assert.ok(mission.includes(text), `mission missing ${text}`);
   }
+  // CHANGED IN B2c: Herdr and Comments are items of "More actions", read on the open render, BY TEST ID. BEFORE: '>Herdr<' and '>Comments<' anywhere in the
+  // markup; '>Herdr<' was also met by a record-source label ("Herdr", diScanModel.ts), so it never pinned the button (it still passed with the button moved).
+  const missionOpen = renderToStaticMarkup(
+    createElement(DiScanPanel, {
+      rows: DI_SCAN_LOCK,
+      initialSelectedId: DI_SCAN_LOCK[0]?.id,
+      initialView: 'mission',
+      initialMoreActionsOpen: true,
+      onMinimize: () => undefined,
+    }),
+  );
+  for (const [id, label] of [
+    ['di-scan-herdr', 'Herdr'],
+    ['di-scan-comments', 'Comments'],
+  ] as const)
+    assert.match(missionOpen, new RegExp(`<button[^>]*data-testid="${id}"[^>]*>${label}</button>`), `the ${label} item`);
   assert.ok(mission.includes('data-view="mission"'));
 
   const diff = renderToStaticMarkup(
@@ -224,10 +247,12 @@ test('mission details, the code diff and comments open from the locked row; Herd
   assert.equal(mission.includes('data-testid="di-scan-pane"'), false);
   assert.equal(mission.includes('Ask Codex to do anything'), false);
   assert.equal(mission.includes('Focus terminal'), false);
-  assert.match(mission, /data-testid="di-scan-herdr"/);
-  // Package A: Herdr is wired to the office's own answer for the Mission. With no control wired into this view the button is disabled and says
+  // CHANGED IN B2c: the Herdr control is an item of "More actions", read on the open render, HELD (aria-disabled) rather than natively disabled. BEFORE:
+  // the button in the closed markup, `disabled=""`. Its line ("not connected") stays in the notes row of the closed markup.
+  assert.match(missionOpen, /data-testid="di-scan-herdr"/);
+  // Package A: Herdr is wired to the office's own answer for the Mission. With no control wired into this view the item is held and says
   // so, and it no longer carries a static note about another tool (the control's states are covered in diScanMissionDetails.test.ts).
-  assert.match(mission, /<button[^>]*data-testid="di-scan-herdr"[^>]*disabled=""/);
+  assert.match(missionOpen, /<button[^>]*data-testid="di-scan-herdr"[^>]*aria-disabled="true"/);
   assert.match(mission, /The Herdr control is not connected to this view/);
   assert.doesNotMatch(mission, /herdctl/);
 

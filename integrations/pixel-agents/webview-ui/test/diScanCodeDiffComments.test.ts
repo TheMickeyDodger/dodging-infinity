@@ -35,7 +35,13 @@ const render = (view: DiScanView, row: DiScanRow = DI_SCAN_LOCK[0]!, specimen = 
       ...(herdr ? { herdr } : {}),
     }),
   );
-const stage = (html: string) => /data-testid="di-scan-stage"[\s\S]*$/.exec(html)?.[0] ?? '';
+/** CHANGED IN B2b (scoping only): Home, mounted beside every screen, now comes AFTER the screens in the document (Tab follows the window's order), so a
+ * slice "from the screen to the end" stops where Home begins. Where it looks changes, never what it expects. */
+const untilHome = (s: string) => {
+  const at = s.indexOf('data-testid="di-scan-home"');
+  return at < 0 ? s : s.slice(0, at);
+};
+const stage = (html: string) => untilHome(/data-testid="di-scan-stage"[\s\S]*$/.exec(html)?.[0] ?? '');
 const tag = (html: string, testid: string) =>
   new RegExp(`<[a-z]+[^>]*data-testid="${testid}"[^>]*>`).exec(html)?.[0] ?? '';
 const nav = (html: string) => /<nav[^>]*data-testid="di-scan-siblings"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';

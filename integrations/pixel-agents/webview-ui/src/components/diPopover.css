@@ -1,0 +1,105 @@
+/* Direction B (B2c): the anchored, non-modal popover (ui/AnchoredPopover.tsx, diPopover.ts). Tokens only: a flat surface, a line, the one
+   popover shadow DESIGN.md names (--di-shadow-pop), radii from the scale, the ramp's sizes. No motion: it appears and disappears in place.
+   Its layer is LOCAL: 1 lifts it over the positioned content that follows it inside the same screen. The screen it sits in is its stacking
+   context (the scan stage states its own classified layer), so this never competes with the window's layers (diMissionRequestStacking). */
+.di-popover-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.di-popover {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 4px);
+  right: 0;
+  box-sizing: border-box;
+  /* B2c round 15: a PREFERRED width, NEVER a floor. 240 px is the product's measured popover where it has room (an unrecorded choice of mine,
+     found by the Reviewer: as `min-width` it overrode the frame's room, so the box was drawn outside its frame). `max-width`, set inline from the
+     placement (the frame's room toward the chosen alignment), always beats `width`, and an absolutely positioned box's automatic minimum is 0, so the
+     frame wins. The real limit is the content's own min-content, MEASURED at 73 px (b2c-r15-frame-BEFORE-chrome.log); a frame too narrow for that
+     (under about 89 px with the margins) is UNSUPPORTED: the content would scroll inside the box. */
+  width: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--di-space-2);
+  border: 1px solid var(--di-line);
+  border-radius: var(--di-radius-box);
+  background: var(--di-surface);
+  box-shadow: var(--di-shadow-pop);
+  color: var(--di-text);
+  font-size: var(--di-text-base);
+  line-height: 1.4;
+  text-align: left;
+}
+.di-popover[data-side='above'] {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+.di-popover[data-align='start'] {
+  right: auto;
+  left: 0;
+}
+.di-popover :focus {
+  outline: none;
+}
+.di-popover :focus-visible {
+  outline: 2px solid var(--di-focus);
+  outline-offset: 1px;
+}
+.di-popover-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.di-popover-item {
+  display: flex;
+  flex-direction: column;
+}
+.di-popover .di-popover-action {
+  appearance: none;
+  border: 0;
+  border-radius: var(--di-radius-sm);
+  background: transparent;
+  color: var(--di-text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  min-height: 32px;
+  padding: var(--di-space-2) var(--di-space-4);
+  text-align: left;
+}
+.di-popover .di-popover-action:hover:not([aria-disabled='true']) {
+  background: var(--di-control-hover);
+}
+/* held: drawn as not available (never as active), still focusable so its reason can be reached */
+.di-popover .di-popover-action[aria-disabled='true'] {
+  background: transparent;
+  color: var(--di-muted);
+  cursor: default;
+  font-weight: 700;
+}
+.di-popover-reason {
+  margin: 0;
+  padding: 0 var(--di-space-4) var(--di-space-2);
+  color: var(--di-muted);
+  font-size: var(--di-text-sm);
+  line-height: 1.45;
+}
+.di-popover .di-popover-close {
+  appearance: none;
+  align-self: flex-end;
+  display: block;
+  margin: var(--di-space-2) 0 0 auto;
+  border: 1px solid var(--di-edge);
+  border-radius: var(--di-radius-sm);
+  background: transparent;
+  color: var(--di-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--di-text-sm);
+  min-height: 28px;
+  padding: 0 var(--di-space-5);
+}
+.di-popover .di-popover-close:hover {
+  background: var(--di-control-hover);
+}

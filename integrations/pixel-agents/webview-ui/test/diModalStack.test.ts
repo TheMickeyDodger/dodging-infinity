@@ -8,8 +8,9 @@
  *    'clear' (never 'close'), every close route of the review and of reception starts from a control inside the
  *    hidden dialog, and the office panel never unmounts after its first office state.
  *
- * The invariants: #root is inert if and only if at least one dialog is in front; a dialog changes the guard only
- * through its own claim and release; only the dialog that was foremost at close gives focus back.
+ * The invariants: #root is inert if and only if at least one MODAL claim is in front (B1: a claim is modal by default; a non-modal popover is in
+ * front, so it owns keys, but inerts nothing); a surface changes the guard only through its own claim and release; foremost-ness spans ALL claims,
+ * and only the surface that was foremost at close gives focus back.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -18,6 +19,7 @@ import {
   CLOSE_FOCUS_FALLBACKS,
   frontCount,
   isForemost,
+  modalFrontCount,
   releaseFront,
   returnFocusOnClose,
 } from '../src/components/diModalStack.ts';
@@ -64,6 +66,7 @@ function control(name: string, state: Partial<Pick<FakeControl, 'isConnected' | 
 }
 const FIND = '[data-testid="di-find-input"]';
 const OFFICE_RESTORE = '[data-testid="di-office-panel-collapsed"]';
+const RAIL_HOME = '[data-testid="di-rail-home"]';
 
 beforeAll(() => {
   (globalThis as unknown as { document: unknown }).document = {
@@ -246,15 +249,29 @@ describe('DEFENSIVE exercises (not reachable through the product UI today)', () 
  * never the page body. A dialog that was not foremost moves no focus.
  */
 describe('close-time focus fallback (the twin of the restore fallback)', () => {
-  const setup = (find: FakeControl | null, officeRestore: FakeControl | null) => {
+  const setup = (find: FakeControl | null, officeRestore: FakeControl | null, railHome: FakeControl | null = null) => {
     page.active = null;
     page.bySelector.clear();
     if (find) page.bySelector.set(FIND, find);
     if (officeRestore) page.bySelector.set(OFFICE_RESTORE, officeRestore);
+    if (railHome) page.bySelector.set(RAIL_HOME, railHome);
   };
 
-  it('the fallbacks are named once, in order: the office Find box, then the office panel restore control', () => {
-    expect(CLOSE_FOCUS_FALLBACKS).toEqual([FIND, OFFICE_RESTORE]);
+  it('the fallbacks are named once, in order: the office Find box, then the office panel restore control, then (D1b) the scan face rail Home', () => {
+    expect(CLOSE_FOCUS_FALLBACKS).toEqual([FIND, OFFICE_RESTORE, RAIL_HOME]);
+  });
+
+  it('D1b, REACHABLE on the scan face (no Find box; panel shown, so no restore control): an opener that cannot take focus falls back to the rail Home, never the page body', () => {
+    setup(null, null, control('rail home'));
+    expect((returnFocusOnClose(true, null) as unknown as FakeControl | null)?.name).toBe('rail home');
+    expect(page.active?.name).toBe('rail home');
+  });
+
+  it('D1b: the rail Home comes LAST: with the Find box or the restore control present, they are used first, as before', () => {
+    setup(control('find'), control('office restore'), control('rail home'));
+    expect((returnFocusOnClose(true, null) as unknown as FakeControl | null)?.name).toBe('find');
+    setup(control('find', { hidden: true }), control('office restore'), control('rail home'));
+    expect((returnFocusOnClose(true, null) as unknown as FakeControl | null)?.name).toBe('office restore');
   });
 
   it('REACHABLE: an opener that can take focus gets it back', () => {
@@ -296,5 +313,152 @@ describe('close-time focus fallback (the twin of the restore fallback)', () => {
     setup(control('find', { hidden: true }), control('office restore', { isConnected: false }));
     expect(returnFocusOnClose(true, null)).toBeNull();
     expect(page.active).toBeNull();
+  });
+});
+
+
+/** A NON-MODAL popover's lifecycle (Direction B): it is in front, so it owns keys, but it inerts nothing. */
+function popover(name: string) {
+  const owner = { name };
+  const self = {
+    focusReturned: null as boolean | null,
+    open: () => claimFront(owner, { modal: false }),
+    close: () => {
+      self.focusReturned = releaseFront(owner);
+    },
+    foremost: () => isForemost(owner),
+  };
+  return self;
+}
+
+describe('B1: front-ness split from modal inertness (mixed stacks)', () => {
+  it('M1 a popover alone: it is foremost and owns keys, #root is NOT inert, and its close reports it was foremost', () => {
+    const p = popover('more actions');
+    p.open();
+    expect(p.foremost()).toBe(true);
+    expect(frontCount()).toBe(1);
+    expect(modalFrontCount()).toBe(0);
+    expect(inert()).toBe(false);
+    p.close();
+    expect(p.focusReturned).toBe(true);
+  });
+
+  it('M2 a popover, then a dialog over it: inert while the dialog is up; the dialog is foremost; the popover closing beneath it moves no focus and leaves the guard', () => {
+    const p = popover('more actions');
+    const d = dialog('settings');
+    p.open();
+    d.open();
+    expect(inert()).toBe(true);
+    expect(d.foremost()).toBe(true);
+    expect(p.foremost()).toBe(false);
+    p.close();
+    expect(p.focusReturned).toBe(false);
+    expect(inert()).toBe(true);
+    d.close();
+    expect(d.focusReturned).toBe(true);
+  });
+
+  it('M2b the dialog closes first: inert lifts, and the popover is foremost again', () => {
+    const p = popover('more actions');
+    const d = dialog('settings');
+    p.open();
+    d.open();
+    d.close();
+    expect(d.focusReturned).toBe(true);
+    expect(inert()).toBe(false);
+    expect(p.foremost()).toBe(true);
+    p.close();
+    expect(p.focusReturned).toBe(true);
+  });
+
+  it('M3 a dialog, then a popover inside it: still inert (a modal claim remains), the popover is foremost; it closes first and the dialog is foremost again', () => {
+    const d = dialog('code review');
+    const p = popover('file menu');
+    d.open();
+    p.open();
+    expect(inert()).toBe(true);
+    expect(p.foremost()).toBe(true);
+    p.close();
+    expect(p.focusReturned).toBe(true);
+    expect(d.foremost()).toBe(true);
+    expect(inert()).toBe(true);
+    d.close();
+    expect(d.focusReturned).toBe(true);
+  });
+
+  it('M3b the dialog closes while its popover is up: the dialog was not foremost (no focus moved), inert lifts only because no modal claim is left', () => {
+    const d = dialog('code review');
+    const p = popover('file menu');
+    d.open();
+    p.open();
+    d.close();
+    expect(d.focusReturned).toBe(false);
+    expect(modalFrontCount()).toBe(0);
+    expect(inert()).toBe(false);
+    p.close();
+    expect(p.focusReturned).toBe(true);
+  });
+
+  it('M4 two popovers: the later is foremost; the earlier closing is not foremost; nothing is ever inert', () => {
+    const p1 = popover('one');
+    const p2 = popover('two');
+    p1.open();
+    p2.open();
+    expect(inert()).toBe(false);
+    expect(p2.foremost()).toBe(true);
+    p1.close();
+    expect(p1.focusReturned).toBe(false);
+    expect(p2.foremost()).toBe(true);
+    p2.close();
+    expect(p2.focusReturned).toBe(true);
+  });
+
+  it('M5 dialog, popover, dialog: the top dialog is foremost; each close in turn hands foremost-ness down and inert holds while any dialog remains', () => {
+    const d1 = dialog('reception');
+    const p = popover('row menu');
+    const d2 = dialog('settings');
+    d1.open();
+    p.open();
+    d2.open();
+    expect(d2.foremost()).toBe(true);
+    expect(modalFrontCount()).toBe(2);
+    d2.close();
+    expect(d2.focusReturned).toBe(true);
+    expect(p.foremost()).toBe(true);
+    expect(inert()).toBe(true);
+    p.close();
+    expect(p.focusReturned).toBe(true);
+    expect(d1.foremost()).toBe(true);
+    d1.close();
+    expect(d1.focusReturned).toBe(true);
+  });
+
+  it('M6 a re-claim re-states the modality: the same owner claimed non-modal, then modal, then non-modal again', () => {
+    const owner = { name: 'shape-shifter' };
+    claimFront(owner, { modal: false });
+    expect(inert()).toBe(false);
+    claimFront(owner);
+    expect(inert()).toBe(true);
+    expect(frontCount()).toBe(1);
+    claimFront(owner, { modal: false });
+    expect(inert()).toBe(false);
+    expect(releaseFront(owner)).toBe(true);
+  });
+
+  it('M7 releasing an owner that never claimed changes nothing and reports false', () => {
+    const d = dialog('settings');
+    d.open();
+    expect(releaseFront({ name: 'stranger' })).toBe(false);
+    expect(inert()).toBe(true);
+    expect(d.foremost()).toBe(true);
+    d.close();
+  });
+
+  it('DEFAULT: a claim with no options is MODAL, so every existing caller is unchanged', () => {
+    const owner = { name: 'legacy' };
+    claimFront(owner);
+    expect(modalFrontCount()).toBe(1);
+    expect(inert()).toBe(true);
+    releaseFront(owner);
   });
 });

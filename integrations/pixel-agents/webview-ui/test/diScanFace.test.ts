@@ -189,6 +189,14 @@ async function openWorldControls(): Promise<void> {
   await p().waitForSelector('[data-testid="world-zoom-buttons"]');
 }
 
+/** B2c: Comments, Evidence and review and Herdr are items of Mission details' "More actions" (an anchored, non-modal popover); open it, unless it is
+ *  open, to read or use one. A held item is aria-disabled (and stays focusable), never natively disabled. */
+async function openMore(): Promise<void> {
+  if ((await p().locator('[data-testid="di-scan-more-actions-popover"]').count()) === 0) await p().click('[data-testid="di-scan-more-actions"]');
+  await p().waitForSelector('[data-testid="di-scan-more-actions-popover"]');
+}
+const heldNow = async (selector: string) => (await p().locator(selector).getAttribute('aria-disabled')) === 'true';
+
 test(
   'NON-REGRESSION: the rail sits at the left edge, the world starts at its edge, and the world controls are drawn whole beside it',
   async () => {
@@ -392,14 +400,19 @@ test(
     // THE REAL HOOK, AGAINST A STAND-IN OFFICE. Opening the Mission asks the office whether a launch is available: a status, which is a read.
     const status = await herdrRequestAfter('status', 0);
     assert.deepEqual(status, { type: 'diHerdrRequest', seq: status.seq, op: 'status', missionRef });
-    // until the office answers, Herdr is disabled and says it is checking: nothing has been assumed
-    assert.equal(await p().locator('[data-testid="di-scan-herdr"]').isDisabled(), true);
+    // until the office answers, Herdr is held and says it is checking: nothing has been assumed
+    // CHANGED IN B2c: Herdr is an item of "More actions", HELD (aria-disabled) rather than natively disabled; the popover stays open while the office answers
+    await openMore();
+    assert.equal(await heldNow('[data-testid="di-scan-herdr"]'), true);
     assert.match((await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim(), /Checking whether Herdr can open for this Mission/);
     assert.equal(received.filter((m) => m.type === 'diHerdrRequest' && m.op === 'launch').length, 0, 'no launch was sent before the office said one is available');
 
     // the office says a launch is available: Herdr is enabled and says what a click does
     socket!.send(JSON.stringify({ type: 'diHerdrReply', seq: status.seq, op: 'status', state: 'ok', problem: null, reason: null, answer: herdrAnswer() }));
-    await p().waitForFunction(() => !(document.querySelector('[data-testid="di-scan-herdr"]') as HTMLButtonElement).disabled);
+    await p().waitForFunction(() => {
+      const item = document.querySelector('[data-testid="di-scan-herdr"]');
+      return item !== null && item.getAttribute('aria-disabled') !== 'true';
+    });
     // CHANGED IN the Free UI streamline (2026-11-04, A1): the visible line is the first statement of what a click does; the office's full words are in the
     // closed "What Herdr does here" disclosure (`di-scan-herdr-note`), read here as the document holds them, and every assertion on them is kept
     assert.equal((await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim(), "Opens Terminal on this Mission's herd. It types nothing into any pane or terminal.");
@@ -418,7 +431,9 @@ test(
     await p().click('[data-testid="di-scan-herdr"]');
     const launch = await herdrRequestAfter('launch', before);
     assert.deepEqual(launch, { type: 'diHerdrRequest', seq: launch.seq, op: 'launch', missionRef });
-    assert.equal(await p().locator('[data-testid="di-scan-herdr"]').isDisabled(), true, 'disabled while the launch is in flight');
+    // CHANGED IN B2c: the click closed "More actions" (focus back on its trigger); reopened to read the item
+    await openMore();
+    assert.equal(await heldNow('[data-testid="di-scan-herdr"]'), true, 'held while the launch is in flight');
 
     // the office's refusal is shown with its real words, and nothing is claimed
     const refusal = 'Nothing was opened: Workspace focus was not established, and Herdr\'s call failed, so nothing is known to have moved. The launcher was written at /x/herdr-attach-a1b2.command and was not used.';
@@ -647,7 +662,8 @@ test(
 
 // ── AC-4.4-26 (pass C): clicking an agent or its Mission label opens THAT Mission; Back returns Home with the world as it was
 // The fixture draws TWO Missions (characters 1-4 and 5-8) and runtime agents (9-16, never assigned to a Mission by their
-// contract). Before each open the OTHER Mission is the selected Home row, so "open the selected row" cannot pass.
+// contract). Before each open the OTHER Mission was the last one docked, then dismissed (B2a: "selected" means "docked"; at HEAD it was the selected Home
+// row), and the world's selection is on its member, so "open the last docked" or "open the world-selected" cannot pass.
 const HERD = 'herd:20261017-150121-aaaaaa@5a4574665441';
 const CORE = 'mc:mn-1aa604085c36ca55d01b57634ee13f41';
 // tried in this order: NOT the first drawn member first, since a chosen Home row moves the world's selection to its Mission's
@@ -742,17 +758,27 @@ const openedMission = async (ms = 3_000) => {
     .catch(() => undefined);
   return stageMission();
 };
-/** Make `ref` the selected Home row (its own tab), and return its title as Home shows it. */
+/**
+ * CHANGED IN B2a (Q8 = (a), condition 3: AC-4.4-26's one setup PRECONDITION, not its clauses). This made `ref` the SELECTED Home row (one click selected,
+ * a second opened). One click now docks, and "selected" means "docked", so a Home row is never selected with nothing docked. The precondition is
+ * re-expressed: `ref` is DOCKED from its own Home row (its own tab), which moves the world's selection to its first drawn member exactly as choosing did,
+ * then DISMISSED with the labelled Back. `ref` is then the last Mission docked, and the world's selection is still on its member, so a click that opened
+ * "the last docked" or "the world-selected" Mission cannot pass. Back, not Escape: it is the dismissal `backHome` already uses, and some of these tests run
+ * on a fake page clock. Returns the title Home shows for `ref`.
+ */
 async function chooseRow(ref: string): Promise<string> {
   const row = `[data-testid="di-scan-row"][data-mission-ref="${ref}"]`;
   for (const tab of ['open', 'merged', 'closed', 'archived']) {
     await p().click(`[data-testid="di-scan-tab-${tab}"]`);
     if ((await p().locator(row).count()) > 0) break;
   }
-  // a click on the row that is ALREADY selected opens it, so only an unselected row is clicked
-  if ((await p().getAttribute(row, 'aria-pressed')) !== 'true') await p().click(row);
-  assert.equal(await p().getAttribute(row, 'aria-pressed'), 'true', `${ref} is the selected Home row`);
-  return (await p().locator(`${row} .di-scan-title`).innerText()).trim();
+  const title = (await p().locator(`${row} .di-scan-title`).innerText()).trim();
+  await p().click(row);
+  assert.equal(await openedMission(), ref, `one click on ${ref}'s Home row docked it`);
+  await p().click('[data-testid="di-scan-back"]');
+  await p().locator('[data-testid="di-scan-stage"]').waitFor({ state: 'detached', timeout: 15_000 });
+  assert.equal(await p().getAttribute(row, 'aria-current'), null, `${ref} was dismissed: its row is no longer marked`);
+  return title;
 }
 /** A REAL click on character `id` in the world; true once that character itself was hit (a click that hit another is undone). */
 async function clickAgent(id: number): Promise<boolean> {
@@ -811,19 +837,19 @@ async function clickOneOf(ids: number[]): Promise<number | null> {
 }
 
 test(
-  'AC-4.4-26 CORRECT MISSION: a real click on an agent opens THAT agent\'s Mission, for agents of BOTH drawn Missions, with the other Mission selected on Home',
+  'AC-4.4-26 CORRECT MISSION: a real click on an agent opens THAT agent\'s Mission, for agents of BOTH drawn Missions, with the other Mission docked then dismissed',
   async () => {
     await boot();
     for (const [mine, other] of [
       [CORE, HERD],
       [HERD, CORE],
     ] as const) {
-      // the title Home shows for THIS Mission, then the OTHER Mission made the selected row
+      // the title Home shows for THIS Mission, then the OTHER Mission docked and dismissed (B2a)
       const mineTitle = await chooseRow(mine);
       await chooseRow(other);
       const clicked = await clickOneOf(OF[mine]!);
       assert.ok(clicked !== null, `a real click reached an agent of ${mine}`);
-      assert.equal(await openedMission(), mine, `agent ${clicked} opened its OWN Mission, not the selected ${other}`);
+      assert.equal(await openedMission(), mine, `agent ${clicked} opened its OWN Mission, not the last-docked ${other}`);
       assert.equal((await p().locator('[data-testid="di-scan-mission-title"]').innerText()).trim(), mineTitle);
       // selection and follow are kept: the click still selects and follows the agent (nothing existing removed)
       assert.deepEqual(await selectedNow(), { selected: clicked, follow: clicked });
@@ -844,7 +870,7 @@ test(
       await chooseRow(other);
       const opened = await clickLabelOf(OF[mine]!);
       assert.ok(opened !== null, `a label of ${mine} was on the world`);
-      assert.equal(await openedMission(), mine, `label of agent ${opened} opened its OWN Mission, not the selected ${other}`);
+      assert.equal(await openedMission(), mine, `label of agent ${opened} opened its OWN Mission, not the last-docked ${other}`);
       await backHome();
     }
   },
@@ -1435,7 +1461,7 @@ test(
       assert.equal(await labelOf(id).count(), 1, `agent ${id}: the label stays while the pointer is on it`);
       await p().mouse.click(to.x, to.y);
       await frames(8);
-      assert.equal(await openedMission(), mine, `clicking agent ${id}'s hovered label opened its OWN Mission, not the selected ${other}`);
+      assert.equal(await openedMission(), mine, `clicking agent ${id}'s hovered label opened its OWN Mission, not the last-docked ${other}`);
     }
   },
   STEPS_MS,
@@ -1495,7 +1521,7 @@ test(
     assert.notEqual((await selectedNow()).selected, 7, 'still not selected');
     await p().mouse.click(to.x, to.y);
     await frames(8);
-    assert.equal(await openedMission(), CORE, "clicking agent 7's label opened agent 7's Mission (CORE), not the selected HERD row");
+    assert.equal(await openedMission(), CORE, "clicking agent 7's label opened agent 7's Mission (CORE), not the last-docked HERD");
   },
   STEPS_MS,
 );

@@ -144,8 +144,8 @@ test(
   'DECIDE IN THE REQUEST PANEL (browser): enabled on the Mission waiting for a decision; the click opens the workspace on that proposal and sends no decision',
   async () => {
     await boot();
+    // CHANGED IN B2a (Q8 = (a)): one click docks a Mission; the select-then-open second step (the removed card's Open Mission) is gone
     await p().click(`${sel('di-scan-row')}[data-mission-ref="${core.missionRef}"]`);
-    await p().click(sel('di-scan-open-mission'));
     const decide = p().locator('[data-testid="di-scan-state-actions"] [data-action="decide"]');
     await decide.waitFor();
     assert.equal(((await decide.textContent()) ?? '').trim(), 'Decide in the request panel');
@@ -204,8 +204,8 @@ test(
   'CARRY1, STATE ACTIONS IN THE ACCESSIBILITY TREE (browser): with their fold closed, each action\'s description is its always-present copy, measured by CDP',
   async () => {
     await boot();
+    // CHANGED IN B2a (Q8 = (a)): one click docks a Mission; the select-then-open second step (the removed card's Open Mission) is gone
     await p().click(`${sel('di-scan-row')}[data-mission-ref="${core.missionRef}"]`);
-    await p().click(sel('di-scan-open-mission'));
     await p().locator('[data-testid="di-scan-state-actions"] .di-scan-state-action').first().waitFor();
     assert.equal(await p().locator(sel('di-scan-state-more')).evaluate((d) => (d as HTMLDetailsElement).open), false, 'the fold is closed');
     const buttons = p().locator('[data-testid="di-scan-state-actions"] .di-scan-state-action');
@@ -241,8 +241,8 @@ for (const where of ['MISSION DETAILS (the opener still there)', 'HOME (the open
     `F4, the workspace opened from Mission details' Decide, closed with its Close button on ${where}: focus lands on the opener, or on the page shown, never <body>`,
     async () => {
       await boot();
+      // CHANGED IN B2a (Q8 = (a)): one click docks a Mission; the select-then-open second step (the removed card's Open Mission) is gone
       await p().click(`${sel('di-scan-row')}[data-mission-ref="${core.missionRef}"]`);
-      await p().click(sel('di-scan-open-mission'));
       const decide = p().locator('[data-testid="di-scan-state-actions"] [data-action="decide"]');
       await p().waitForFunction(() => {
         const b = document.querySelector('[data-testid="di-scan-state-actions"] [data-action="decide"]');

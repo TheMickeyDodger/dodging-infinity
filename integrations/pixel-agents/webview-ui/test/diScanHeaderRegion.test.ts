@@ -31,7 +31,7 @@ import { WebSocketServer } from 'ws';
 
 import type { DiCodeReview, DiOfficeState } from '../../core/src/messages.ts';
 import type { HeaderMeasure } from './diHeaderRegion.ts';
-import { drawnOverlaps, measureHeader, runHeaderControls, tabsNotReachable } from './diHeaderRegion.ts';
+import { drawnOverlaps, measureHeader, oneRowNeed, oneRowPin, runHeaderControls, tabsNotReachable } from './diHeaderRegion.ts';
 
 const STEPS_MS = 240_000;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -222,7 +222,11 @@ async function sweep(surface: Surface, view: View, geometry: string | null, labe
           problems.push(...violations(m, tag, view, label, expected));
           if (m.rows > 1) wrapped++;
           if (view === 'comments' && m.rows !== 1) problems.push(`${tag}: Comments wrapped (rows ${m.rows}): the wrap is scoped to Code Diff`);
-          if (width >= 1280 && m.rows !== 1) problems.push(`${tag}: a locked or wider width is not ONE row (rows ${m.rows})`);
+          // RE-EXPRESSED (F-b, the Lead's ruling T3): BEFORE, "a locked or wider width is ONE row (rows n)", which keyed the header's ROOM to the WINDOW.
+          // Docked, the room is the stage. Now: ONE row wherever the channel holds the header's minimum one-row content, both measured separately
+          // (oneRowNeed); where it does not (1480 Archived, 5 px short, ruled DESIGNED behaviour), the designed two-row composition. FALSIFIABLE: the
+          // control test below draws two rows in a channel that holds the content, and this pin must go red.
+          if (width >= 1280 && m.rows !== 1) problems.push(...oneRowPin(m, await oneRowNeed(page), tag));
           if (geometry === null && PIXEL_WIDTHS.has(width) && title === null) {
             const px = await drawnOverlaps(page);
             if (px.overdrawPairs.length) problems.push(`${tag}: PIXELS drawn over each other ${px.overdrawPairs.map((o) => `${o.a} x ${o.b}: ${o.sharedDrawnPixels}px`).join(', ')}`);
@@ -272,6 +276,39 @@ for (const surface of ['specimen', 'real'] as const) {
     );
   }
 }
+
+test(
+  'THE RE-EXPRESSED ONE-ROW PIN CAN FAIL (falsifiable, the Lead\'s condition): two rows drawn in a channel that holds the content go RED; as drawn, one row passes',
+  async () => {
+    if (skipIfUnavailable()) return;
+    for (const surface of ['specimen', 'real'] as const) {
+      const page = await openSurface(surface, 'diff', 1672);
+      try {
+        await shape(page, 1672, 'Archived', null);
+        // NEGATIVE: as the product draws it, one row in a channel that holds the content: no violation
+        const asDrawn = await measureHeader(page);
+        const need = await oneRowNeed(page);
+        assert.equal(asDrawn.rows, 1, `${surface}: as drawn, one row`);
+        assert.ok(need.channel >= need.minOneRow, `${surface}: the channel (${need.channel}) holds the content (${need.minOneRow})`);
+        assert.deepEqual(oneRowPin(asDrawn, need, surface), [], `${surface}: as drawn, the pin passes`);
+        // POSITIVE: the tools pushed onto a second row by a VERTICAL margin only (no width changes), so the channel still holds the content
+        await page.addStyleTag({ content: ".di-scan-stage[data-view='diff'] .di-scan-header-controls { margin-top: 40px !important; }" });
+        await page.waitForTimeout(60);
+        const forced = await measureHeader(page);
+        const forcedNeed = await oneRowNeed(page);
+        assert.equal(forced.rows, 2, `${surface}: the control draws TWO rows`);
+        assert.equal(forcedNeed.minOneRow, need.minOneRow, `${surface}: and changes no width (the minimum one-row content is unchanged)`);
+        assert.equal(forcedNeed.channel, need.channel, `${surface}: nor the channel`);
+        const red = oneRowPin(forced, forcedNeed, `${surface}/control`);
+        assert.equal(red.length, 1, `${surface}: the pin goes RED on the control: ${JSON.stringify(red)}`);
+        assert.match(red[0]!, /holds its minimum one-row content .* yet it draws 2 rows/);
+      } finally {
+        await page.close();
+      }
+    }
+  },
+  STEPS_MS,
+);
 
 test(
   'THE TITLE axis (the page\'s own, one letter, 134 characters): the title is the flexible item, so nothing overlaps for any title, and a one-letter title is never truncated',

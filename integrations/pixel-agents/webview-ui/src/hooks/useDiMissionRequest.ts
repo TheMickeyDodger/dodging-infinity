@@ -63,6 +63,8 @@ export interface DiMissionRequestControl {
   /** Send the composer's words as one turn of the restricted, read-only conversation. */
   sendTurn: () => void;
   newConversation: () => void;
+  /** D1: close the conversation shown and return to a blank start, KEEPING the typed ask as the same input (nothing is sent). */
+  closeConversation: () => void;
   openConversation: (conversationId: string) => void;
   /**
    * New Mission shows the conversation IN PLACE (the scan face's one composer): while it does (`on` true), the open conversation is READ as the open
@@ -133,6 +135,8 @@ export function useDiMissionRequest(
         missionRef: meta.missionRef ?? null,
         // review round 2: the conversation a read or a turn is about, kept with the request so its reply (failed or not) is attributed by identity
         conversationId: typeof fields.conversationId === 'string' ? fields.conversationId : null,
+        // D1: the words a turn sent, so its answer clears the box only while it still holds exactly them
+        text: op === 'turn' && typeof fields.text === 'string' ? fields.text : null,
       });
       transport.send(buildMessage(op, seq, fields));
     },
@@ -260,6 +264,7 @@ export function useDiMissionRequest(
   }, [ask]);
 
   const newConversation = useCallback(() => dispatch({ type: 'newConversation' }), []);
+  const closeConversation = useCallback(() => dispatch({ type: 'closeConversation' }), []);
   const watchConversation = useCallback((on: boolean) => {
     watching.current = Math.max(0, watching.current + (on ? 1 : -1));
     // a showing that begins reads at once, as opening the workspace does
@@ -445,6 +450,7 @@ export function useDiMissionRequest(
     setTyped,
     sendTurn,
     newConversation,
+    closeConversation,
     openConversation,
     watchConversation,
     submitDraft,

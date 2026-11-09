@@ -20,6 +20,8 @@ import { installMapKeyGuard } from '../office/mapKeyGuard.js';
 import { presentationGeneration } from '../office/presentationGeneration.js';
 import { mapOffset } from '../office/projection.js';
 import { isE2E } from '../runtime.js';
+import { canTakeFocus } from './diMinimize.js';
+import { CLOSE_FOCUS_FALLBACKS, frontCount } from './diModalStack.js';
 
 interface WorldMapProps {
   officeState: OfficeState;
@@ -48,6 +50,55 @@ interface WorldMapProps {
  * Every world edge is visible (fitWorldMap); Esc or the Map button closes it; a click centres the
  * camera on that spot.
  */
+/**
+ * K1 round 17: where focus goes when the Map's OWN Escape closes it. Focus on a control that keeps it (the toggle, another world control) stays there.
+ * Focus fallen to the page body (the path the coverage term guards: nothing covers the Map) goes to the Map's OPENER, its toggle; when the world's
+ * chrome is collapsed and the toggle is not drawn, to the world's disclosure, which brings it back; then to the shared close-time fallbacks
+ * (diModalStack.ts). It is never left on the body.
+ */
+const MAP_CLOSE_FOCUS = ['[data-testid="world-view-map"]', '[data-testid="di-world-disclosure"]', ...CLOSE_FOCUS_FALLBACKS] as const;
+function closeByKeyboard(onClose: () => void, host: HTMLElement | null): void {
+  const a = document.activeElement;
+  const keeps = a instanceof HTMLElement && a !== document.body && host?.contains(a) !== true && canTakeFocus(a);
+  onClose();
+  if (keeps) return;
+  for (const selector of MAP_CLOSE_FOCUS) {
+    const target = document.querySelector<HTMLElement>(selector);
+    if (!canTakeFocus(target)) continue;
+    target.focus();
+    if (document.activeElement === target) return;
+  }
+}
+
+/**
+ * K1 (C): a surface that covers the world (`data-di-covers-world`: the scan stage, the request workspace while it covers) is RENDERED now and its box
+ * CONTAINS the Map's. Read at the key from what is drawn, never from an attribute that can outlive what it describes (a minimized panel keeps its
+ * stage mounted but hidden: `checkVisibility` is false, so it covers nothing).
+ */
+function mapCoveredNow(host: HTMLElement | null): boolean {
+  if (host === null) return false;
+  const m = host.getBoundingClientRect();
+  for (const el of document.querySelectorAll<HTMLElement>('[data-di-covers-world]')) {
+    if (!el.checkVisibility({ checkVisibilityCSS: true })) continue;
+    const r = el.getBoundingClientRect();
+    if (r.left <= m.left + 1 && r.top <= m.top + 1 && r.right >= m.right - 1 && r.bottom >= m.bottom - 1) return true;
+  }
+  return false;
+}
+
+/**
+ * K1 (F): focus is on a VISIBLE element outside the Map's own region. The Map's region is the Map itself and the world's own controls
+ * (`[data-di-world-controls]`, the labelled Map toggle and the disclosure among them): focus there leaves the keys with the Map, so Escape on the
+ * toggle closes the Map. A focused element that is not visible (inside a minimized panel) owns nothing.
+ */
+function focusOwnedOutsideMap(host: HTMLElement | null): boolean {
+  const a = document.activeElement;
+  if (!(a instanceof HTMLElement) || a === document.body) return false;
+  if (!a.checkVisibility({ checkVisibilityCSS: true })) return false;
+  if (host?.contains(a) === true) return false;
+  return a.closest('[data-di-world-controls]') === null;
+}
+
 export function WorldMap({
   officeState,
   zoom,
@@ -85,10 +136,19 @@ export function WorldMap({
     () =>
       installMapKeyGuard(
         window,
-        onClose,
+        // round 17: the keyboard close gives focus an intentional, visible destination (closeByKeyboard)
+        () => closeByKeyboard(onClose, hostRef.current),
         () =>
           document.getElementById('root')?.hasAttribute('inert') === true ||
-          hostRef.current?.closest('[data-di-world-controls="suspended"]') != null,
+          // B1: a NON-MODAL popover in front sets no inert, but it owns Escape: the Map yields to any claim in front (diModalStack)
+          frontCount() > 0 ||
+          hostRef.current?.closest('[data-di-world-controls="suspended"]') != null ||
+          // K1 (the Supervisor's ruling, .herd/state/k1-keyboard-ownership-ruling.md): the Map owns the keys only while it is the surface the person is
+          // using. A visible surface holding focus owns its keys (F), and a surface that COVERS the Map now owns them when focus has fallen to the body
+          // (C). Both are read AT THE KEY; hidden or minimized content owns nothing. Isolation is kept by behaviour, not by stopping every key: the
+          // world-pan stands down while the Map is drawn (App.tsx), and the editor's keys need edit mode, which closes the Map.
+          mapCoveredNow(hostRef.current) ||
+          focusOwnedOutsideMap(hostRef.current),
       ),
     [onClose],
   );

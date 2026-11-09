@@ -2,6 +2,7 @@ import './diScanPanel.css';
 
 import {
   Fragment,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type Ref,
   useCallback,
@@ -10,17 +11,20 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 
 import type { DiRetainedSource } from '../../../core/src/messages.js';
-import { DI_DELETE_HOLD_MS, DI_RAIL_WIDTH_PX } from '../constants.js';
+import { DI_DELETE_HOLD_MS, DI_PANEL_WIDTH_PX, DI_RAIL_WIDTH_PX, DI_SCAN_TWO_PANE_MIN_PX } from '../constants.js';
 import type { DiDeliveryControl } from '../hooks/useDiDelivery.js';
 import type { ReviewSession, ReviewTargetRef } from './diCodeReviewModel.js';
+import { useCoverIsolation } from './diCoverIsolation.js';
 import { DiDeliveryStatus } from './DiDeliveryEntry.js';
 import { enteredId, pendingLine } from './diDeliveryModel.js';
 import type { DiHerdrControl, HerdrControlView } from './diHerdrModel.js';
 import { herdrControlView } from './diHerdrModel.js';
 import type { MrDeletion } from './diMissionRequestModel.js';
+import { frontCount } from './diModalStack.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 import { scanDiffFor } from './diScanDiffRead.js';
 import type {
@@ -58,6 +62,7 @@ import {
   DI_EVIDENCE_NOT_AVAILABLE,
   DI_EVIDENCE_NOT_LISTED,
   DI_MISSIONS_READ,
+  DI_NEEDS_YOU,
   DI_SCAN_MISSION_VIEWS,
   DI_SCAN_PAGE_VIEWS,
   DI_SCAN_TABS,
@@ -93,6 +98,7 @@ import {
   receptionHeadline,
   retentionFactWords,
 } from './diScanPagesModel.js';
+import { AnchoredPopover, PopoverItem } from './ui/AnchoredPopover.js';
 
 export interface DiScanPanelProps {
   rows: readonly DiScanRow[];
@@ -100,6 +106,13 @@ export interface DiScanPanelProps {
   initialSelectedId?: string | null;
   /** Open on this screen. The product starts on the list. */
   initialView?: DiScanView;
+  /** B2b: the list dock's width, which a docked screen's right edge leaves free in two-pane mode (the office panel's own width). */
+  dockWidthPx?: number;
+  /**
+   * B2c: Mission details opens with "More actions" already open. For the labelled specimen and for static-markup tests only (a closed popover's items
+   * are not in the markup, so a test that pins an item's state renders it open); the product starts closed. Like `initialView`, an initial state only.
+   */
+  initialMoreActionsOpen?: boolean;
   /** The Missions page opens on this filter. The product starts on All. */
   initialMissionsStatus?: DiMissionsStatus;
   minimizeRef?: Ref<HTMLButtonElement>;
@@ -118,6 +131,10 @@ export interface DiScanPanelProps {
   onOpenRequestWorkspace?: (opener: HTMLElement) => void;
   /** Opens the existing Settings dialog (the panel's sliders and the rail's Settings). Absent: Settings says why. */
   onOpenSettings?: () => void;
+  /** B3 routes: a keyboard route from Home to the Map (absent where the Map cannot be reached) and to the minimized surfaces (shown only while some are). Each acts or is not drawn. */
+  onJumpToWorld?: () => void;
+  minimizedCount?: number;
+  onJumpToMinimized?: () => void;
   /**
    * Stage 4: the ONE review session (the operational modal's own hook and reducer) and its controls. The scan Code Diff reads the
    * selected Mission through it (an admitted reference, never a path) and draws the answer in the nested editor: no modal.
@@ -126,6 +143,7 @@ export interface DiScanPanelProps {
   onReviewBegin?: (target: ReviewTargetRef) => void;
   onReviewEnd?: () => void;
   onReviewChoose?: (path: string | null) => void;
+  onReviewRefresh?: () => void;
   /**
    * The scan face's ONE Reception: the full page beside the rail, and the rail badge, both read from this source, so the
    * badge and the header are one number by construction (AC-4.7-16). Null or absent: this office has no reception desk;
@@ -234,11 +252,6 @@ const HERDR_ANSWER_MORE = 'The office’s answer about Herdr';
 const TRASH_MORE = 'Deleting cannot be undone: what it removes, and what remains';
 const TRASH_NOT_CONNECTED =
   'This office has no request panel to delete through, so nothing can be deleted here.';
-/**
- * Free UI streamline, review round 2 (REPORT section 6, item 1): Home's Trash never deletes. Where the office HAS a delete route, it says where deleting is
- * done (Mission details); TRASH_NOT_CONNECTED, said there before (at HEAD, whenever the gate was open), was false in that office. The gate is unchanged.
- */
-const TRASH_ON_DETAILS = 'Deleting is done from this Mission’s details, not from here: open it, then hold its Trash.';
 const TRASH_LABEL = 'Hold to delete this Mission’s local data';
 
 /** Round 9: the hold is withdrawn while this Mission's delete is in flight, and once one was accepted (a second press is impossible, not merely harmless). */
@@ -389,6 +402,15 @@ function assetUrl(palette: number): { url: string; bust: boolean } {
   }
   const index = ((palette % 6) + 6) % 6;
   return { url: `${base}assets/characters/char_${index}.png`, bust: false };
+}
+
+/** B2d (a separately named delta): the Code Diff editor is a SCROLLER, and its arrows are its own. The large world's arrow pan (App.tsx) listens on the
+ * window and cancels every unmodified arrow that reaches it, so in the metropolis it ate the editor's (an inherited interaction, measured identical at
+ * HEAD). The NARROW form of the review dialog's guard (DiCodeReview `handleKey`, which traps far more): stop ONLY the four unmodified arrows the pan takes,
+ * ONLY while focus is in the editor, and never prevent their default, so the native scroll runs. Tab, Escape and Cmd+N still reach their listeners. */
+function keepArrowsInEditor(event: ReactKeyboardEvent<HTMLElement>): void {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') event.stopPropagation();
 }
 
 function codeTokens(text: string): { text: string; kind: string }[] {
@@ -601,71 +623,8 @@ function GearIcon() {
 }
 
 /** The Code Diff header's Settings gear (pixel-lock 03): the SAME gear path as GearIcon drawn as a thin OUTLINE. A separate component on purpose: GearIcon (solid) is also the left rail's Settings icon and stays as it is. */
-function GearOutlineIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinejoin="round"
-        d="M9.6 1.8h4.8l.4 2.3c.7.2 1.3.5 1.9.9l2.1-1.1 2.4 2.4-1.1 2.1c.4.6.7 1.2.9 1.9l2.3.4v4.8l-2.3.4c-.2.7-.5 1.3-.9 1.9l1.1 2.1-2.4 2.4-2.1-1.1c-.6.4-1.2.7-1.9.9l-.4 2.3H9.6l-.4-2.3a7 7 0 0 1-1.9-.9l-2.1 1.1-2.4-2.4 1.1-2.1a7 7 0 0 1-.9-1.9l-2.3-.4V9.7l2.3-.4c.2-.7.5-1.3.9-1.9L2.8 5.3 5.2 2.9l2.1 1.1c.6-.4 1.2-.7 1.9-.9l.4-2.3ZM12 8.6a3.4 3.4 0 1 0 .01 0Z"
-      />
-    </svg>
-  );
-}
 
-function SlidersIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <circle
-        cx="16.5"
-        cy="6.5"
-        r="2.15"
-        fill="var(--di-scan-bg)"
-        stroke="currentColor"
-        strokeWidth="1.7"
-      />
-      <circle
-        cx="7.2"
-        cy="12"
-        r="2.15"
-        fill="var(--di-scan-bg)"
-        stroke="currentColor"
-        strokeWidth="1.7"
-      />
-      <circle
-        cx="12"
-        cy="17.5"
-        r="2.15"
-        fill="var(--di-scan-bg)"
-        stroke="currentColor"
-        strokeWidth="1.7"
-      />
-    </svg>
-  );
-}
 
-function FilterIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M3 4.2h18L14.4 12.4V20h-4.8v-7.6L3 4.2Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function SearchIcon() {
   return (
@@ -1428,6 +1387,19 @@ function Siblings({
   );
 }
 
+/**
+ * B2b (the Lead, 2026-11-05): with a screen docked beside the list, the list must be cheap to reach by keyboard WITHOUT dismissing the screen (Escape
+ * and Back both close it). This is the screen's FIRST stop (one Shift+Tab from Back), shown only while focused, like a skip link; Enter moves focus to
+ * the docked Mission's row. Two panes only: in one pane the list is covered.
+ */
+function ToListLink({ onToList }: { onToList: () => void }) {
+  return (
+    <button type="button" className="di-scan-to-list" data-testid="di-scan-to-list" onClick={onToList} aria-label="Go to the Mission list; this Mission stays open">
+      Go to the Mission list
+    </button>
+  );
+}
+
 function Stage({
   view,
   row,
@@ -1443,6 +1415,7 @@ function Stage({
   onReviewBegin,
   onReviewEnd,
   onReviewChoose,
+  onReviewRefresh,
   onOpenDecision,
   renderEvidence,
   fixtureBanner,
@@ -1450,9 +1423,28 @@ function Stage({
   herdr,
   onDeleteLocalData,
   deleteResults,
+  rightPx,
+  onToList,
+  initialMoreActionsOpen = false,
+  filesOpen,
+  onToggleFiles,
+  wrapCode,
+  onToggleWrap,
 }: {
   view: 'mission' | 'diff' | 'comments' | 'evidence';
   row: DiScanRow;
+  /** B2b: the docked right edge in two-pane mode (undefined: one pane, the stage covers the list). */
+  rightPx?: number;
+  /** B2c: "More actions" starts open (the specimen and static-markup tests; DiScanPanelProps.initialMoreActionsOpen). */
+  initialMoreActionsOpen?: boolean;
+  /** B2b: two panes only, the cheap keyboard path to the list that keeps this Mission docked. */
+  /** B2d: whether the Code Diff's file tree is shown (the panel remembers it for the session), and the labelled control that changes it. */
+  filesOpen: boolean;
+  onToggleFiles: () => void;
+  /** B3: the optional soft wrap of the code (a display preference; off by default; kept for the life of the panel). */
+  wrapCode: boolean;
+  onToggleWrap: () => void;
+  onToList?: () => void;
   /** Where Back from Mission details goes (M1). */
   origin: DiScanOrigin;
   /** Opened from Reception's Open Mission: bring Delivery into view and focus (R11). */
@@ -1467,6 +1459,7 @@ function Stage({
   onReviewBegin?: (target: ReviewTargetRef) => void;
   onReviewEnd?: () => void;
   onReviewChoose?: (path: string | null) => void;
+  onReviewRefresh?: () => void;
   onOpenDecision?: (requestRef: string, opener: HTMLElement) => void;
   renderEvidence?: (missionRef: string) => ReactNode;
   fixtureBanner: string | null;
@@ -1494,6 +1487,8 @@ function Stage({
   // reason, so the office's own answer (still read: archived is read-only, not information-erasing) is always one disclosure away.
   const herdrMore = row.tab === 'archived' || herdrView.note !== herdrView.line;
   const herdrMoreLabel = row.tab === 'archived' ? HERDR_ANSWER_MORE : herdrView.tone === 'refused' ? HERDR_REASON_MORE : HERDR_WHAT_MORE;
+  // B2c: the Herdr item is held exactly where the button was disabled, and its reason is the status line's own words
+  const herdrHeld = row.tab === 'archived' ? HERDR_ARCHIVED : herdrView.enabled ? null : herdrView.line;
   // Round 9: this Mission's own latest owner delete, by its SOURCE-QUALIFIED ref (never shown on another row that shares a native id)
   const deletion = row.local ? deleteResults?.[row.id] : undefined;
   // the trash's scope, in the tense that holds now: an unfinished deletion is never said as done, drawn or spoken
@@ -1512,7 +1507,38 @@ function Stage({
   const placeholder = source.kind === 'sample' || source.kind === 'read' ? null : source;
   const thread = scanThread(row);
   const [fileQuery, setFileQuery] = useState('');
+  // 1C G3: a control that succeeds by ceasing to exist owes a SURVIVING destination BEFORE it goes. Refresh's status block is replaced by the refreshed diff, so focus lands on the editor bar's PATH label (the refreshed
+  // content's own name), which persists through the refusal, the reading and the content. tabIndex -1 there ADDS a capability and leaves the Tab order as it was. GUARDED: the landing happens only while focus is still
+  // where Refresh left it (inside the editor) or on nothing; a deliberate move elsewhere (the Home list, the tree) drops the intent, so a late read never steals it.
+  const landOnPath = useRef(false);
+  // what the intent was made against: the refusal showing when Refresh was used (an interim render can still show it)
+  const landRefusal = useRef<unknown>(null);
+  // NO DEADLINE (the review hook has no answer timeout) and NO key or pointer listener (a modifier or an Arrow pressed on the reading placeholder relocates nothing and must not cancel the only handoff). The handoff waits for as long as the read takes and ends when it lands, when focus is NOT where Refresh left it or on nothing (a direct test of a deliberate move), when a NEW refusal arrives, or when this view unmounts
+  const wantLanding = () => {
+    landOnPath.current = true;
+    landRefusal.current = reviewSession?.refusal ?? null;
+  };
+  const pathRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!landOnPath.current) return;
+    const active = document.activeElement;
+    const mine = active === null || active === document.body || (active instanceof HTMLElement && active.closest('.di-scan-editor') !== null);
+    // a refusal is a reason to give up only if it is a NEW one: the first render after the click can still show the OLD refusal
+    if (!mine) landOnPath.current = false;
+    else if (pathRef.current !== null) {
+      landOnPath.current = false;
+      pathRef.current.focus();
+    } else if (placeholder !== null && placeholder.kind !== 'reading' && !(placeholder.kind === 'refused' && (reviewSession?.refusal ?? null) === landRefusal.current)) landOnPath.current = false; // a new refusal, or nothing to land on
+  });
   const [findOpen, setFindOpen] = useState(false);
+  // 1B: Find a file lives in the More popover. When it OPENS the box, focus goes to the search input (its intentional destination); closing it returns to the trigger.
+  const findInputRef = useRef<HTMLInputElement>(null);
+  const focusFindOnOpen = useRef(false);
+  useEffect(() => {
+    if (!findOpen || !focusFindOnOpen.current) return;
+    focusFindOnOpen.current = false;
+    findInputRef.current?.focus();
+  }, [findOpen, filesOpen]);
   // C3: the file shown in the diff pane; picking another file in the tree shows its changes (read only). The specimen keeps its own
   // choice; a real listing's choice lives in the review session (by path, so it survives a new snapshot)
   const [sampleFileId, setSampleFileId] = useState<string | null>(() => (source.kind === 'sample' ? source.diff.initial : null));
@@ -1570,21 +1596,60 @@ function Stage({
     onDeliveryFocused();
   }, [focusDelivery, view, onDeliveryFocused]);
 
+  // 1B (instance 6 of the silent-no-op class): Copy's OUTCOME is said, locally, in all three cases: copied; the clipboard ABSENT; the clipboard REFUSED. The text copied is UNCHANGED (the same lines joined by newlines).
+  const [copyResult, setCopyResult] = useState<{ path: string; ok: boolean; reason: string | null } | null>(null);
+  // HELD COPY: while the held control has FOCUS, its reason is DRAWN in the result slot (a title and screen-reader text are not drawn). The status carrier is untouched: nothing was copied, so nothing is announced as copied.
+  const [copyFocused, setCopyFocused] = useState(false);
   const copyDiff = () => {
-    if (!file) return;
+    if (!file || file.lines.length === 0) return; // a held Copy does nothing: a file object is not content (see copyReason), so nothing is written and no success is said
+    const path = file.path;
     const text = file.lines.map((line) => line.text).join('\n');
-    void navigator.clipboard?.writeText(text).catch(() => undefined);
+    const clip: Clipboard | undefined = navigator.clipboard;
+    if (clip === undefined || typeof clip.writeText !== 'function') {
+      setCopyResult({ path, ok: false, reason: 'the clipboard is not available here' });
+      return;
+    }
+    void clip.writeText(text).then(
+      () => setCopyResult({ path, ok: true, reason: null }),
+      (error: unknown) => setCopyResult({ path, ok: false, reason: error instanceof Error && error.name === 'NotAllowedError' ? 'the clipboard refused (permission was not given)' : 'the clipboard refused' }),
+    );
   };
+  // 1B: a control that is drawn available IS available, and a FILE OBJECT IS NOT CONTENT: a selected file can carry no lines at all (withheld, binary, too large, not UTF-8, unsupported, still reading, refused,
+  // or a real file with nothing to show), so Copy is held there too, with that notice's own reason. KNOWN-EMPTY (a real file with no changed lines) and UNREAD (its changes were not or could not be read) do not share words.
+  const copyReason: string | null = (() => {
+    if (!file) return 'Choose a file in the tree first; Copy then copies the lines of that file.';
+    if (file.lines.length > 0) return null;
+    const notice = file.notice;
+    if (notice === undefined) return 'There are no lines to copy.';
+    // the notice's OWN reason: the first sentence of the words the pane already shows for this state (its title when it has no body)
+    const own = (notice.body.split('. ')[0] ?? '').replace(/\.$/, '') || notice.title;
+    if (notice.state === 'empty' || notice.state === 'no_content_diff') return `This file has no changed lines, so there is nothing to copy. ${own}.`;
+    if (notice.state === 'text' || notice.state === 'submodule') return 'The read returned no lines for this file, so there is nothing to copy.';
+    if (notice.state === 'reading') return 'Its changes are still being read. Copy is available once they arrive.';
+    if (notice.state === 'refused') return `Its changes could not be read, so there is nothing to copy. ${own}.`;
+    return `Its changes are not shown, so there is nothing to copy. ${own}.`;
+  })();
+  // What is copied is the lines as SHOWN, joined by newlines: hunk headers and the \ No newline marks included, a clipped line with its clipping note, and NOT the + and − marks or the line numbers. It is not a patch, so no word here says it is.
+  const copyWords =
+    copyResult === null || file === null || copyResult.path !== file.path
+      ? ''
+      : copyResult.ok
+        ? 'Copied the lines shown, without the + and − marks or the line numbers.'
+        : `Could not copy: ${copyResult.reason}. Select the lines in the diff and copy them yourself.`;
+  const heldWords = copyReason !== null && copyFocused ? copyReason : '';
 
   return (
     <div
       className="di-scan-stage"
       data-testid="di-scan-stage"
+      // K1: this screen covers the world while it is drawn (WorldMap.tsx reads it at the key, with its rendered box)
+      data-di-covers-world=""
       data-view={view}
       data-mission-ref={row.id}
-      // the stage starts at the rail's edge (the world yields the same width), so the rail stays beside it
-      style={{ left: DI_RAIL_WIDTH_PX }}
+      // the stage starts at the rail's edge (the world yields the same width), so the rail stays beside it; in two-pane mode it ends at the list (B2b)
+      style={{ left: DI_RAIL_WIDTH_PX, ...(rightPx !== undefined ? { right: `calc(${rightPx}px + var(--scan-tray-w, 0px))` } : {}) }}
     >
+      {onToList && <ToListLink onToList={onToList} />}
       <StageFixture text={fixtureBanner} />
       <header className="di-scan-stage-bar">
         <div className="di-scan-header-lead">
@@ -1627,40 +1692,59 @@ function Stage({
                   <button
                     type="button"
                     className="di-scan-icon-button"
-                    aria-label="Find a file"
-                    aria-pressed={findOpen}
-                    data-testid="di-scan-diff-find"
-                    onClick={() => setFindOpen((open) => !open)}
-                  >
-                    <SearchIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className="di-scan-icon-button"
-                    aria-label="Copy the diff"
+                    aria-label="Copy the lines shown"
+                    data-testid="di-scan-diff-copy"
+                    aria-disabled={copyReason !== null ? 'true' : undefined}
+                    aria-describedby={copyReason !== null ? 'di-scan-diff-copy-reason' : undefined}
+                    title={copyReason ?? undefined}
+                    onFocus={() => setCopyFocused(true)}
+                    onBlur={() => setCopyFocused(false)}
                     onClick={copyDiff}
                   >
                     <CopyIcon />
                   </button>
+                  {copyReason !== null && (
+                    <span className="di-scan-visually-hidden" id="di-scan-diff-copy-reason" data-testid="di-scan-diff-copy-reason">
+                      {copyReason}
+                    </span>
+                  )}
                 </>
               )}
-              <button
-                type="button"
-                className="di-scan-icon-button"
-                aria-label="Settings"
-                onClick={() => onOpenSettings?.()}
-              >
-                <GearOutlineIcon />
-              </button>
-              <button
-                type="button"
-                className="di-scan-icon-button"
-                aria-label="More"
-                disabled
-                title="More options are not available in this office."
-              >
-                <MoreIcon />
-              </button>
+              {/* 1B: the Code Diff utilities are secondaries: ONE anchored, non-modal popover in the place of the disabled More. Copy the diff stays direct. */}
+              <AnchoredPopover label="More" dialogLabel="Code Diff options" triggerClassName="di-page-button" testid="di-scan-diff-more">
+                {(dismiss) => (
+                  <>
+                    {diff && (
+                      <>
+                        <PopoverItem
+                          label="Find a file"
+                          testid="di-scan-diff-find"
+                          pressed={findOpen && filesOpen}
+                          onSelect={() => {
+                            // B2d (round 20): Find searches the FILE TREE, so with the tree collapsed it OPENS the tree and its box. Opening goes to the search input; closing, to the trigger.
+                            const opening = !(findOpen && filesOpen);
+                            if (!filesOpen) {
+                              onToggleFiles();
+                              setFindOpen(true);
+                            } else setFindOpen((open) => !open);
+                            focusFindOnOpen.current = opening;
+                            dismiss(opening ? 'in-place' : 'to-trigger');
+                          }}
+                        />
+                      </>
+                    )}
+                    <PopoverItem
+                      label="Settings"
+                      testid="di-scan-diff-settings"
+                      held={onOpenSettings === undefined ? 'Settings are not available in this office' : null}
+                      onSelect={() => {
+                        dismiss('to-trigger');
+                        onOpenSettings?.();
+                      }}
+                    />
+                  </>
+                )}
+              </AnchoredPopover>
             </div>
           </div>
         )}
@@ -1782,36 +1866,56 @@ function Stage({
             >
               Code Diff
             </button>
-            <button
-              type="button"
-              className="di-scan-action di-scan-action-secondary"
-              data-testid="di-scan-herdr"
-              title={herdrView.note}
-              aria-describedby={herdrMore ? 'di-scan-herdr-reason di-scan-herdr-desc' : 'di-scan-herdr-reason'}
-              aria-busy={herdrView.busy}
-              disabled={!herdrView.enabled || row.tab === 'archived'}
-              onClick={() => herdr?.launch(row.id)}
+            {/* B2c: Code Diff stays the one primary; the secondaries are in ONE anchored, non-modal popover (diPopover.ts). A held item says why, in
+                the item, and stays focusable. Herdr's status line, its disclosure and Check again stay in the notes row below (the Lead's ruling (i):
+                A1, a section leads with its status line). */}
+            <AnchoredPopover
+              label="More actions"
+              dialogLabel="More actions"
+              triggerClassName="di-scan-action di-scan-action-secondary"
+              testid="di-scan-more-actions"
+              initialOpen={initialMoreActionsOpen}
             >
-              Herdr
-            </button>
-            <button
-              type="button"
-              className="di-scan-action di-scan-action-secondary"
-              data-testid="di-scan-comments"
-              onClick={() => onView('comments')}
-            >
-              Comments
-            </button>
-            <button
-              type="button"
-              className="di-scan-action di-scan-action-secondary"
-              data-testid="di-scan-evidence"
-              disabled={!evidenceLive}
-              aria-describedby={evidenceReason === null ? undefined : 'di-scan-evidence-reason'}
-              onClick={() => onView('evidence')}
-            >
-              {DI_EVIDENCE_LABEL}
-            </button>
+              {(dismiss) => (
+                // Comments and Evidence NAVIGATE: Mission details unmounts with the popover in it, and the unmount releases the claim (diPopover.ts), so the
+                // next Escape peels the new screen as usual. Herdr does not navigate: it closes the popover with focus back on the trigger.
+                <>
+                  <PopoverItem
+                    label="Comments"
+                    testid="di-scan-comments"
+                    onSelect={() => onView('comments')}
+                  />
+                  <PopoverItem
+                    label={DI_EVIDENCE_LABEL}
+                    testid="di-scan-evidence"
+                    held={evidenceReason}
+                    heldId="di-scan-evidence-reason"
+                    onSelect={() => onView('evidence')}
+                  />
+                  <PopoverItem
+                    label="Herdr"
+                    testid="di-scan-herdr"
+                    title={herdrView.note}
+                    held={herdrHeld}
+                    heldId="di-scan-herdr-held"
+                    describedBy={
+                      herdrHeld !== null
+                        ? herdrMore
+                          ? 'di-scan-herdr-desc'
+                          : undefined
+                        : herdrMore
+                          ? 'di-scan-herdr-reason di-scan-herdr-desc'
+                          : 'di-scan-herdr-reason'
+                    }
+                    busy={herdrView.busy}
+                    onSelect={() => {
+                      dismiss('to-trigger');
+                      herdr?.launch(row.id);
+                    }}
+                  />
+                </>
+              )}
+            </AnchoredPopover>
             {trashGate(row).open && onDeleteLocalData && row.local && !deletionWithdraws(deletion) ? (
               <HoldToDelete
                 onHeld={() =>
@@ -1872,15 +1976,6 @@ function Stage({
                 </More>
               )}
             </div>
-            {evidenceReason !== null && (
-              <p
-                className="di-scan-stage-note"
-                id="di-scan-evidence-reason"
-                data-testid="di-scan-evidence-reason"
-              >
-                {evidenceReason}
-              </p>
-            )}
             <div className="di-scan-trash-notes">
               <LocalRetention row={row} />
               <p
@@ -1948,6 +2043,7 @@ function Stage({
               <div className="di-scan-editor-body" data-testid="di-scan-editor">
                 <div
                   className="di-scan-editor-empty"
+                  tabIndex={-1}
                   data-testid={placeholder.kind === 'not_read' ? 'di-scan-diff-not-read' : `di-scan-diff-${placeholder.kind}`}
                   role={placeholder.kind === 'not_read' ? undefined : 'status'}
                 >
@@ -1957,6 +2053,22 @@ function Stage({
                         <strong>{placeholder.title}</strong>
                       </p>
                       <p>{placeholder.detail}</p>
+                      {/* 1C: the error's advice ("Refresh") names a control; the scan face now HAS it. The status block outlives the click, so focus stays in it. */}
+                      {placeholder.kind === 'refused' && placeholder.retry === true && onReviewRefresh !== undefined && (
+                        <button
+                          type="button"
+                          className="di-page-button"
+                          data-testid="di-scan-diff-refresh"
+                          onClick={(event) => {
+                            const block = event.currentTarget.closest<HTMLElement>('.di-scan-editor-empty');
+                            wantLanding();
+                            onReviewRefresh();
+                            block?.focus();
+                          }}
+                        >
+                          Refresh
+                        </button>
+                      )}
                     </>
                   ) : (
                     <p>{placeholder.reason}</p>
@@ -1971,7 +2083,13 @@ function Stage({
       {view === 'diff' && diff && (
         <div className="di-scan-ide" data-testid="di-scan-diff" data-source={source.kind}>
           <div className="di-scan-ide-main">
-            <aside className="di-scan-tree" aria-label="Files">
+            {/* B2d: collapsed, the tree is HIDDEN, not unmounted, so its scroll and its find box survive. The `hidden` attribute alone hides it: Tailwind's
+                preflight draws [hidden] as `display: none !important` in its base layer, which no unlayered author rule can override (Rule 7: verified). */}
+            <aside className="di-scan-tree" aria-label="Files" id="di-scan-files" hidden={!filesOpen}>
+              {/* B3 routes: every file is a Tab stop between the header and the editor, so the cost of reaching the changes grew with the collection. This is the first stop in the tree and lands on the editor bar's path label. */}
+              <button type="button" className="di-jump" data-testid="di-scan-skip-files" onClick={() => pathRef.current?.focus()}>
+                Skip the file list
+              </button>
               <div className="di-scan-tree-head">
                 <span>FILES</span>
                 <MoreIcon />
@@ -1985,6 +2103,7 @@ function Stage({
                     placeholder="Find a file"
                     aria-label="Find a file"
                     data-testid="di-scan-diff-search"
+                    ref={findInputRef}
                     onChange={(event) => setFileQuery(event.target.value)}
                   />
                 </label>
@@ -2039,10 +2158,45 @@ function Stage({
             </aside>
             <div className="di-scan-editor">
               <div className="di-scan-editor-bar">
-                <span className="di-scan-editor-path" data-testid="di-scan-editor-path">
+                {/* B2d: the tree's labelled, reversible collapse. It lives OUTSIDE the tree, so collapsing cannot strand focus and leaves no strip in the
+                    code channel; it adds no Escape layer. */}
+                <button
+                  type="button"
+                  className="di-scan-files-toggle"
+                  data-testid="di-scan-files-toggle"
+                  aria-expanded={filesOpen}
+                  aria-controls="di-scan-files"
+                  onClick={onToggleFiles}
+                >
+                  {filesOpen ? 'Hide files' : 'Show files'}
+                </button>
+                <span className="di-scan-editor-path" data-testid="di-scan-editor-path" ref={pathRef} tabIndex={-1}>
                   {file?.path ?? entry?.name ?? ''}
                 </span>
+                <span className="di-scan-visually-hidden" role="status" data-testid="di-scan-diff-copy-status">
+                  {copyWords}
+                </span>
+                {copyWords !== '' && (
+                  <span className="di-scan-copy-result" data-testid="di-scan-diff-copy-result" aria-hidden="true" data-ok={copyResult?.ok === true ? 'true' : 'false'}>
+                    {copyWords}
+                  </span>
+                )}
+                {heldWords !== '' && (
+                  <span className="di-scan-copy-result" data-testid="di-scan-diff-copy-held" aria-hidden="true" data-ok="held">
+                    {heldWords}
+                  </span>
+                )}
                 <span className="di-scan-fixture-tag">{diff.tag ?? 'Sample diff (fixture)'}</span>
+                {/* B3: the optional soft wrap, with the local reading controls. A display preference only: the text, its indentation and its line numbers are the same either way. */}
+                <button
+                  type="button"
+                  className="di-scan-wrap-toggle"
+                  data-testid="di-scan-wrap-toggle"
+                  aria-pressed={wrapCode}
+                  onClick={onToggleWrap}
+                >
+                  Wrap lines
+                </button>
                 <label className="di-scan-unified">
                   <span className="di-scan-visually-hidden">Diff layout</span>
                   <select aria-label="Diff layout" defaultValue="unified">
@@ -2058,14 +2212,29 @@ function Stage({
                   ×
                 </button>
               </div>
-              <div className="di-scan-editor-body" data-testid="di-scan-editor">
+              <div className="di-scan-editor-body" data-testid="di-scan-editor" data-wrap={wrapCode ? 'true' : undefined} onKeyDown={keepArrowsInEditor}>
                 {file?.notice !== undefined ? (
                   // real data: the plain words for why a file has no lines (binary, withheld, not UTF-8, still being read ...)
-                  <div className="di-scan-editor-empty" data-testid="di-scan-file-notice" data-state={file.notice.state} role="status">
+                  <div className="di-scan-editor-empty" data-testid="di-scan-file-notice" data-state={file.notice.state} role="status" tabIndex={-1}>
                     <p>
                       <strong>{file.notice.title}</strong>
                     </p>
                     <p>{file.notice.body}</p>
+                    {file.notice.retry === true && onReviewRefresh !== undefined && (
+                      <button
+                        type="button"
+                        className="di-page-button"
+                        data-testid="di-scan-file-refresh"
+                        onClick={(event) => {
+                          const block = event.currentTarget.closest<HTMLElement>('.di-scan-editor-empty');
+                          wantLanding();
+                          onReviewRefresh();
+                          block?.focus();
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    )}
                   </div>
                 ) : file ? (
                   <>
@@ -2438,6 +2607,7 @@ function Rail({
                   type="button"
                   className="di-rail-item di-rail-orchestrator"
                   data-testid="di-rail-orchestrator"
+                  data-mission-ref={row.id}
                   aria-current={
                     DI_SCAN_MISSION_VIEWS.includes(view) && selectedId === row.id
                       ? 'page'
@@ -2554,20 +2724,43 @@ function Rail({
   );
 }
 
+/**
+ * B2b (Q9): TWO panes in a window DI_SCAN_TWO_PANE_MIN_PX wide or wider (a screen docked between the rail and the list, the list beside it), ONE pane
+ * below (the screen covers the list). One state drives both the docked screen's right edge and whether Home is covered, so they never disagree. With
+ * no window (server rendering) it is one pane.
+ */
+const TWO_PANE_QUERY = `(min-width: ${DI_SCAN_TWO_PANE_MIN_PX}px)`;
+const subscribeTwoPane = (onChange: () => void) => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => undefined;
+  const query = window.matchMedia(TWO_PANE_QUERY);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+};
+const twoPaneNow = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(TWO_PANE_QUERY).matches;
+function useTwoPane(): boolean {
+  return useSyncExternalStore(subscribeTwoPane, twoPaneNow, () => false);
+}
+
 export function DiScanPanel({
   rows,
   initialSelectedId = null,
   initialView = 'list',
+  dockWidthPx = DI_PANEL_WIDTH_PX,
+  initialMoreActionsOpen = false,
   initialMissionsStatus = 'all',
   minimizeRef,
   onMinimize,
   onSelect,
   onOpenRequestWorkspace,
   onOpenSettings,
+  onJumpToWorld,
+  minimizedCount = 0,
+  onJumpToMinimized,
   reviewSession = null,
   onReviewBegin,
   onReviewEnd,
   onReviewChoose,
+  onReviewRefresh,
   reception = null,
   onOpenRequestItem,
   onOpenDecision,
@@ -2590,11 +2783,24 @@ export function DiScanPanel({
   // Nothing in the panel hides a Mission: the only delete affordance is the per-Mission trash (V-6, CONTROL-MAP
   // "trash = Mission delete only"), so the list's hidden set is always empty.
   const hidden = NOTHING_HIDDEN;
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  // B2a ("selected" means "docked"): an initial selection is taken only when the panel opens on a Mission's own screen. On any other screen it would be a
+  // selection that nothing shows (Home's inline card, which drew it, is removed), so it is not taken.
+  const [selectedId, setSelectedId] = useState<string | null>(DI_SCAN_MISSION_VIEWS.includes(initialView) ? initialSelectedId : null);
+  // B2d: the Code Diff's file tree, OPEN by default (the Lead's ruling (a): the tree is the file navigation, so it is never hidden on the default path).
+  // Kept HERE, above the Stage (which remounts per Mission and per view), so the person's choice is remembered for the session, across navigation and
+  // resize.
+  const [filesOpen, setFilesOpen] = useState(true);
+  const [wrapCode, setWrapCode] = useState(false);
   const [view, setView] = useState<DiScanView>(() =>
     VIEWS.includes(initialView) ? initialView : 'list',
   );
+  // B2b (Q9): in two-pane mode a screen docks BESIDE Home (its right edge at the list dock's width) and Home is not covered
+  const twoPane = useTwoPane();
+  const dockRightPx = twoPane ? dockWidthPx : undefined;
   const rootRef = useRef<HTMLDivElement>(null);
+  // R22 / 1A-R: while the request workspace is shown, the stage controls it covers are ISOLATED (inert, still drawn), never focusable unseen
+  // (diCoverIsolation.ts: the trade, including the screen-reader cost, is stated there)
+  useCoverIsolation(rootRef, newMissionRequest?.workspaceShown === true);
   const newRef = useRef<HTMLButtonElement>(null);
   // M1: where Mission details goes Back to (the page it was opened from)
   const [origin, setOrigin] = useState<DiScanOrigin>('list');
@@ -2618,7 +2824,14 @@ export function DiScanPanel({
     setView(page);
   };
 
-  // Cmd N opens New Mission, as the rail's + New Orchestrator does (AC-UX-02), wherever the host delivers the key.
+  // K1 (the Lead's ruling on the defect K1 exposed): hidden, minimized or unmounted content claims NO keys. The panel's own window key handlers
+  // act only while the panel is VISIBLE, read AT THE KEY: a minimized panel keeps this component mounted inside a hidden aside, and its view (and
+  // the aside's data-stage) survive the minimize, so neither can say whether the person can see it. Without this, a key the open Map no longer
+  // swallows dismissed a docked Mission nobody could see. The code review's own handler is off while minimized for the same reason (DiCodeReview.tsx).
+  const panelShown = () => rootRef.current?.checkVisibility({ checkVisibilityCSS: true }) === true;
+
+  // Cmd N opens New Mission, as the rail's + New Orchestrator does (AC-UX-02), wherever the host delivers the key, while the panel is shown.
+  // Hidden, it is a NO-OP (K1, point 6): the app still takes the key from the browser (as before), and switches nothing nobody can see.
   const enterNewMissionRef = useRef(enterNewMission);
   enterNewMissionRef.current = enterNewMission;
   useEffect(() => {
@@ -2626,6 +2839,7 @@ export function DiScanPanel({
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
       if (event.key.toLowerCase() !== 'n') return;
       event.preventDefault();
+      if (!panelShown()) return;
       pageOpener.current = newRef.current;
       enterNewMissionRef.current(newRef.current);
       setView('new');
@@ -2639,16 +2853,29 @@ export function DiScanPanel({
     if (!(aside instanceof HTMLElement)) return;
     if (view === 'list') aside.removeAttribute('data-stage');
     else aside.dataset.stage = 'open';
-    return () => aside.removeAttribute('data-stage');
-  }, [view]);
+    // B3: which layout the open screen is in, for the minimized-surface strip (diScanPanel.css): two panes leave the strip beside the dock, one pane moves it to the window's edge
+    aside.dataset.twoPane = String(twoPane);
+    return () => {
+      aside.removeAttribute('data-stage');
+      aside.removeAttribute('data-two-pane');
+    };
+  }, [view, twoPane]);
 
-  // Esc closes the screen the person is on: a nested screen to its Mission, Mission details to where it was opened from,
+  // Esc closes the screen the person is on, ONE layer per press: a nested screen to its Mission, Mission details to where it was opened from,
   // and a rail page (New Mission is one screen, its proposal drawn in place) to Home, with focus back on the rail entry that opened it.
+  // D1: New Mission peels its own layer first: while it shows a conversation, Esc closes that (the typed ask kept) and only a blank New Mission goes Home.
+  // B1: the ladder acts only while NOTHING is in front (diModalStack). A dialog or a non-modal popover in front owns Escape; without this gate one press
+  // would close that surface AND pop the view (the class of the Settings leak).
+  const newMissionEscape = useRef<(() => boolean) | null>(null);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || view === 'list') return;
+      if (frontCount() > 0) return;
+      // K1: a hidden panel's ladder peels nothing (see panelShown)
+      if (!panelShown()) return;
       if (view === 'diff' || view === 'comments' || view === 'evidence') setView('mission');
       else if (view === 'mission') setView(origin);
+      else if (view === 'new' && newMissionEscape.current?.() === true) return;
       else {
         setView('list');
         const back = pageOpener.current;
@@ -2668,13 +2895,57 @@ export function DiScanPanel({
       viewChanged.current = true;
       return;
     }
-    const lost = document.activeElement === null || document.activeElement === document.body;
+    // B2a-PA2 (post-acceptance, AC-UX-07): Home is COVERED (visibility: hidden) rather than unmounted, so a control in it that had focus has NOT
+    // lost it yet when this runs, and the browser drops it to the page body just after. Focus inside a covered Home counts as lost, as an
+    // unmounted control did at HEAD.
+    const active = document.activeElement;
+    // B2b, the Lead's ruling (B): activating a Home row IS a navigation in BOTH modes, so focus inside Home (covered in one pane, beside the screen in two)
+    // goes to the docked screen too: one key, one focus result, at every width. Focus a person put elsewhere (the rail, the world) is left alone.
+    const lost =
+      active === null ||
+      active === document.body ||
+      rootRef.current?.querySelector('[data-testid="di-scan-home"]')?.contains(active) === true;
     if (!lost || view === 'list') return;
     const target = rootRef.current?.querySelector<HTMLElement>(
       '[data-page-heading="true"], [data-testid="di-scan-back"]',
     );
     target?.focus();
-  }, [view]);
+    // selectedId: in two panes another row can dock a different Mission without the view changing, and that is a navigation too.
+    // twoPane (B2b round 13, the Reviewer's finding 1): crossing 1440 changes neither the view nor the docked Mission, yet narrowing can take focus
+    // away: it COVERS Home (a focused row there is hidden) and UNMOUNTS the list link (a focused link is removed, focus falls to the body). Both
+    // count as lost above, so focus goes to the docked screen; the Mission stays docked, and focus anywhere else is left where it is.
+  }, [view, selectedId, twoPane]);
+
+  // B2a (Q4): "selected" means "docked". Leaving a Mission's screens clears the pick, so the list never shows a selected row with nothing docked. When
+  // that left focus NOWHERE (the control that had it unmounted with the screen, as Escape and Back do), focus goes to the dismissed Mission's own row in
+  // the list, or, if that row is not listed now, to the list's current tab: a reachable, intentional, visible target. Focus a person put somewhere
+  // themselves (the rail's Home, say) is left where it is.
+  const docked = DI_SCAN_MISSION_VIEWS.includes(view);
+  const dockedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (docked) {
+      dockedId.current = selectedId;
+      return;
+    }
+    const left = dockedId.current;
+    dockedId.current = null;
+    if (left === null) return;
+    setSelectedId(null);
+    if (view !== 'list') return;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    const home = rootRef.current;
+    const row = home?.querySelector<HTMLElement>(`[data-testid="di-scan-row"][data-mission-ref="${CSS.escape(left)}"]`);
+    const target = row ?? home?.querySelector<HTMLElement>(`[data-testid="di-scan-tab-${tab}"]`);
+    // the list keeps the scroll the person left it at: focus moves WITHOUT scrolling, and the row is brought into view (the nearest edge) only when it
+    // is not wholly in view
+    target?.focus({ preventScroll: true });
+    const list = row?.closest<HTMLElement>('[data-testid="di-missions"]');
+    if (row && list) {
+      const r = row.getBoundingClientRect();
+      const l = list.getBoundingClientRect();
+      if (r.top < l.top || r.bottom > l.bottom) row.scrollIntoView({ block: 'nearest' });
+    }
+  }, [docked, view, selectedId, tab]);
 
   const shown = useMemo(
     () => visibleScanRows(rows, tab, query, needsOnly, hidden),
@@ -2705,7 +2976,6 @@ export function DiScanPanel({
         ? `${attention} ${attention === 1 ? 'needs' : 'need'} you, and more may. ${openReasons}`
         : `Some Missions may need you. ${openReasons}`;
   const selected = rows.find((row) => row.id === selectedId && !hidden.has(row.id)) ?? null;
-  const shownSelected = shown.find((row) => row.id === selectedId) ?? null;
 
   const choose = (id: string) => {
     setSelectedId(id);
@@ -2727,7 +2997,23 @@ export function DiScanPanel({
     setView('mission');
   }, [openRequest, rows]);
 
+  // B2b, the cheap keyboard paths while a Mission is DOCKED (the Lead, 2026-11-05: returning to the list must not dismiss the Mission). To the list: the
+  // docked Mission's own row, else the list's current tab. Back to the screen: its heading or Back, the same named target as opening.
+  const focusDockedRow = () => {
+    const home = rootRef.current?.querySelector<HTMLElement>('[data-testid="di-scan-home"]');
+    const row = selectedId === null ? null : home?.querySelector<HTMLElement>(`[data-testid="di-scan-row"][data-mission-ref="${CSS.escape(selectedId)}"]`);
+    (row ?? home?.querySelector<HTMLElement>(`[data-testid="di-scan-tab-${tab}"]`))?.focus();
+  };
+  const focusDockedScreen = () =>
+    rootRef.current
+      ?.querySelector<HTMLElement>('[data-testid="di-scan-stage"] [data-page-heading="true"], [data-testid="di-scan-stage"] [data-testid="di-scan-back"]')
+      ?.focus();
   const openMission = (id: string, options: { delivery?: boolean } = {}) => {
+    // activating the row of the Mission ALREADY docked on its details moves focus to that screen, keeping it docked (one key back from the list)
+    if (view === 'mission' && selectedId === id && options.delivery !== true) {
+      focusDockedScreen();
+      return;
+    }
     choose(id);
     // Back returns to the page the Mission was opened from; opening from a Mission's own screens keeps that origin
     if (view === 'list' || view === 'missions' || view === 'reception') setOrigin(view);
@@ -2735,10 +3021,6 @@ export function DiScanPanel({
     setView('mission');
   };
 
-  const shownGate = shownSelected ? trashGate(shownSelected) : null;
-  // Home's ONE reason for its Trash (title and spoken note say the same): the Mission's own gate when closed; when open, where deleting is done, by whether
-  // this office has a delete route at all (as Mission details asks)
-  const homeTrashReason = shownGate?.open ? (onDeleteLocalData ? TRASH_ON_DETAILS : TRASH_NOT_CONNECTED) : shownGate?.reason;
 
   return (
     <>
@@ -2762,9 +3044,96 @@ export function DiScanPanel({
           (view === 'mission' || view === 'diff' || view === 'comments' || view === 'evidence') && selected ? selected.id : null
         }
       />
-      <div ref={rootRef} className="di-scan-body" data-testid="di-scan-panel" data-view={view}>
-        {view === 'list' && (
-          <>
+      <div ref={rootRef} className="di-scan-body" data-testid="di-scan-panel" data-view={view} data-panes={twoPane ? 'two' : 'one'}>
+
+        {(view === 'mission' || view === 'diff' || view === 'comments' || view === 'evidence') && selected && (
+          <Stage
+            initialMoreActionsOpen={initialMoreActionsOpen}
+            rightPx={dockRightPx}
+            onToList={twoPane ? focusDockedRow : undefined}
+            // one Stage per Mission: its file selection and find state start fresh for each Mission (C3/C4 round 5)
+            key={selected.id}
+            view={view}
+            row={selected}
+            origin={origin}
+            focusDelivery={focusDelivery}
+            onDeliveryFocused={deliveryFocused}
+            onList={() => setView('list')}
+            onBack={() => setView(origin)}
+            onMission={() => setView('mission')}
+            onView={setView}
+            onOpenSettings={onOpenSettings}
+            reviewSession={reviewSession}
+            onReviewBegin={onReviewBegin}
+            onReviewEnd={onReviewEnd}
+            onReviewChoose={onReviewChoose}
+            onReviewRefresh={onReviewRefresh}
+            onOpenDecision={onOpenDecision}
+            renderEvidence={renderEvidence}
+            fixtureBanner={fixtureBanner}
+            missionDelivery={missionDelivery}
+            herdr={herdr}
+            onDeleteLocalData={onDeleteLocalData}
+            deleteResults={deleteResults}
+            filesOpen={filesOpen}
+            onToggleFiles={() => setFilesOpen((open) => !open)}
+            wrapCode={wrapCode}
+            onToggleWrap={() => setWrapCode((on) => !on)}
+          />
+        )}
+
+        {DI_SCAN_PAGE_VIEWS.includes(view) && (
+          <div
+            className="di-scan-stage di-scan-page-stage"
+            data-testid="di-scan-stage"
+            // K1: this screen covers the world while it is drawn (WorldMap.tsx reads it at the key, with its rendered box)
+            data-di-covers-world=""
+            data-view={view}
+            // a rail page starts at the rail's edge, like a Mission's screens; in two-pane mode it ends at the list (B2b, Q3: one geometry)
+            style={{ left: DI_RAIL_WIDTH_PX, ...(dockRightPx !== undefined ? { right: `calc(${dockRightPx}px + var(--scan-tray-w, 0px))` } : {}) }}
+          >
+            {twoPane && <ToListLink onToList={focusDockedRow} />}
+            <StageFixture text={fixtureBanner} />
+            {view === 'missions' && (
+              <MissionsPage
+                rows={rows}
+                specimen={specimen}
+                read={missionsRead}
+                onOpenMission={openMission}
+                retained={retained}
+                initialStatus={initialMissionsStatus}
+              />
+            )}
+            {view === 'reception' &&
+              (reception === null ? (
+                <p className="di-scan-stage-note">This office provides no reception desk.</p>
+              ) : (
+                <ReceptionPage
+                  reception={reception}
+                  rows={rows}
+                  onOpenMission={openMission}
+                  onOpenDelivery={(id) => openMission(id, { delivery: true })}
+                  onOpenRequest={onOpenRequestItem}
+                />
+              ))}
+            {view === 'new' && (
+              <NewMissionPage
+                rows={rows}
+                source={newMission}
+                specimen={specimen}
+                request={newMissionRequest ?? undefined}
+                onOpenRequestWorkspace={onOpenRequestWorkspace}
+                onOpenMissions={() => setView('missions')}
+                escapeStep={newMissionEscape}
+              />
+            )}
+          </div>
+        )}
+        {/* B2a: Home (the Mission list) stays MOUNTED in every view, so its tab, scroll and filter are kept. While a screen covers it, it is hidden from
+            sight, from Tab and from the accessibility tree (diScanPanel.css); B2b docks the screen BESIDE it at 1440 px and wider. B2b: Home comes
+            AFTER the screens in the document, so sequential Tab follows the order the window shows: rail | screen | list (the Lead's ruling (B),
+            condition 2). It stays one fixed child, so moving it here never remounts it. */}
+        <div className="di-scan-home" data-testid="di-scan-home" data-covered={view === 'list' || twoPane ? undefined : 'true'}>
             <header className="di-scan-header">
               <div className="di-scan-header-lead">
                 <span className="di-scan-mark" aria-hidden="true">
@@ -2778,25 +3147,37 @@ export function DiScanPanel({
                 )}
               </div>
               <div className="di-scan-header-tools">
-                <button
-                  type="button"
-                  className="di-scan-icon-button"
-                  aria-label="Settings"
-                  data-testid="di-scan-settings"
-                  onClick={() => onOpenSettings?.()}
+                {/* 1B: Settings and the Filter missions toggle are secondaries of the Mission list: ONE anchored, non-modal popover (diPopover.ts), as Mission details' More actions. The trigger
+                    keeps the filter's only cue (the icon's pressed look) in its words. Settings is held, with why, where the office has no settings route (it used to do nothing, silently). */}
+                <AnchoredPopover
+                  label={needsOnly ? `Options (${DI_NEEDS_YOU.toLowerCase()} only)` : 'Options'}
+                  dialogLabel="Mission list options"
+                  triggerClassName="di-page-button"
+                  testid="di-scan-options"
                 >
-                  <SlidersIcon />
-                </button>
-                <button
-                  type="button"
-                  className="di-scan-icon-button"
-                  aria-label="Filter missions"
-                  aria-pressed={needsOnly}
-                  data-testid="di-scan-filter"
-                  onClick={() => setNeedsOnly((value) => !value)}
-                >
-                  <FilterIcon />
-                </button>
+                  {(dismiss) => (
+                    <>
+                      <PopoverItem
+                        label="Settings"
+                        testid="di-scan-settings"
+                        held={onOpenSettings === undefined ? 'Settings are not available in this office' : null}
+                        onSelect={() => {
+                          dismiss('to-trigger');
+                          onOpenSettings?.();
+                        }}
+                      />
+                      <PopoverItem
+                        label={`${DI_NEEDS_YOU} only`}
+                        testid="di-scan-filter"
+                        pressed={needsOnly}
+                        onSelect={() => {
+                          setNeedsOnly((value) => !value);
+                          dismiss('to-trigger');
+                        }}
+                      />
+                    </>
+                  )}
+                </AnchoredPopover>
               </div>
             </header>
 
@@ -2851,6 +3232,21 @@ export function DiScanPanel({
                 />
               </label>
             </div>
+            {/* B3 routes: between the search and the list, so the route to the world controls and to the tray does not run through every Mission row. Each is drawn only where it can act. */}
+            {(onJumpToWorld !== undefined || (minimizedCount > 0 && onJumpToMinimized !== undefined)) && (
+              <div className="di-jump-row" data-testid="di-jump-row">
+                {onJumpToWorld !== undefined && (
+                  <button type="button" className="di-jump" data-testid="di-jump-world" onClick={onJumpToWorld}>
+                    Go to the Map
+                  </button>
+                )}
+                {minimizedCount > 0 && onJumpToMinimized !== undefined && (
+                  <button type="button" className="di-jump" data-testid="di-jump-minimized" onClick={onJumpToMinimized}>
+                    {`Go to minimized surfaces (${minimizedCount})`}
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="di-scan-list" data-testid="di-missions">
               {missionsRead.kind !== 'read' ? (
@@ -2871,8 +3267,9 @@ export function DiScanPanel({
                     className="di-scan-row"
                     data-testid="di-scan-row"
                     data-mission-ref={row.id}
-                    aria-pressed={selectedId === row.id}
-                    onClick={() => (selectedId === row.id ? openMission(row.id) : choose(row.id))}
+                    // B2a (Q8): ONE click docks the Mission. "Selected" means "docked": the same state the rail marks, cleared when it is dismissed
+                    aria-current={DI_SCAN_MISSION_VIEWS.includes(view) && selectedId === row.id ? 'true' : undefined}
+                    onClick={() => openMission(row.id)}
                   >
                     <span className="di-scan-row-copy">
                       {/* H-2 (pass C, 01-home): the status pills sit on the title row, at its right */}
@@ -2908,142 +3305,7 @@ export function DiScanPanel({
               </p>
             )}
 
-            {shownSelected && (
-              <section
-                className="di-scan-detail"
-                data-testid="di-scan-detail"
-                aria-label={shownSelected.title}
-              >
-                <button
-                  type="button"
-                  className="di-scan-detail-open"
-                  data-testid="di-scan-open-mission"
-                  onClick={() => openMission(shownSelected.id)}
-                >
-                  <span className="di-scan-detail-top">
-                    <span className="di-scan-title">{shownSelected.title}</span>
-                    <Pills pills={shownSelected.pills} />
-                  </span>
-                  {shownSelected.description !== '' && (
-                    <p className="di-scan-desc" title={shownSelected.description}>
-                      {shownSelected.description}
-                    </p>
-                  )}
-                  <UnresolvedAgents agents={shownSelected.unresolvedAgents ?? []} compact />
-                  {shownSelected.swarm.length > 0 && (
-                    <ul className="di-scan-swarm" data-testid="di-scan-swarm">
-                      {shownSelected.swarm.map((member) => (
-                        <li key={member.role} className="di-scan-member">
-                          <span className="di-scan-role">{member.role}</span>
-                          {/* H-3 (pass C, 01-home): a small avatar with the name beside it */}
-                          <span className="di-scan-member-who">
-                            <Avatar member={member} />
-                            <span className="di-scan-name">{displayName(member)}</span>
-                            <IdentityLabel member={member} />
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </button>
-                <div className="di-scan-detail-foot">
-                  <MetaLine text={shownSelected.footer} />
-                  <button
-                    type="button"
-                    className="di-scan-trash"
-                    aria-label={TRASH_LABEL}
-                    title={`${TRASH_LABEL}. ${homeTrashReason}`}
-                    data-testid="di-scan-trash"
-                    disabled
-                    aria-describedby="di-scan-detail-trash-reason"
-                  >
-                    <TrashIcon />
-                  </button>
-                  <span className="di-scan-visually-hidden" id="di-scan-detail-trash-reason">
-                    {/* F3 (review round 1): this Mission's own latest delete, by its source-qualified ref, as Mission details reads it: an answer not back, or
-                        accepted and still finishing, is never said as done before the retention reading catches up */}
-                    {deletionUnfinished(shownSelected, shownSelected.local ? deleteResults?.[shownSelected.id] : undefined)
-                      ? TRASH_KEEPS_UNFINISHED
-                      : TRASH_KEEPS}{' '}
-                    {homeTrashReason}
-                  </span>
-                </div>
-              </section>
-            )}
-          </>
-        )}
-
-        {(view === 'mission' || view === 'diff' || view === 'comments' || view === 'evidence') && selected && (
-          <Stage
-            // one Stage per Mission: its file selection and find state start fresh for each Mission (C3/C4 round 5)
-            key={selected.id}
-            view={view}
-            row={selected}
-            origin={origin}
-            focusDelivery={focusDelivery}
-            onDeliveryFocused={deliveryFocused}
-            onList={() => setView('list')}
-            onBack={() => setView(origin)}
-            onMission={() => setView('mission')}
-            onView={setView}
-            onOpenSettings={onOpenSettings}
-            reviewSession={reviewSession}
-            onReviewBegin={onReviewBegin}
-            onReviewEnd={onReviewEnd}
-            onReviewChoose={onReviewChoose}
-            onOpenDecision={onOpenDecision}
-            renderEvidence={renderEvidence}
-            fixtureBanner={fixtureBanner}
-            missionDelivery={missionDelivery}
-            herdr={herdr}
-            onDeleteLocalData={onDeleteLocalData}
-            deleteResults={deleteResults}
-          />
-        )}
-
-        {DI_SCAN_PAGE_VIEWS.includes(view) && (
-          <div
-            className="di-scan-stage di-scan-page-stage"
-            data-testid="di-scan-stage"
-            data-view={view}
-            // a rail page starts at the rail's edge, like a Mission's screens
-            style={{ left: DI_RAIL_WIDTH_PX }}
-          >
-            <StageFixture text={fixtureBanner} />
-            {view === 'missions' && (
-              <MissionsPage
-                rows={rows}
-                specimen={specimen}
-                read={missionsRead}
-                onOpenMission={openMission}
-                retained={retained}
-                initialStatus={initialMissionsStatus}
-              />
-            )}
-            {view === 'reception' &&
-              (reception === null ? (
-                <p className="di-scan-stage-note">This office provides no reception desk.</p>
-              ) : (
-                <ReceptionPage
-                  reception={reception}
-                  rows={rows}
-                  onOpenMission={openMission}
-                  onOpenDelivery={(id) => openMission(id, { delivery: true })}
-                  onOpenRequest={onOpenRequestItem}
-                />
-              ))}
-            {view === 'new' && (
-              <NewMissionPage
-                rows={rows}
-                source={newMission}
-                specimen={specimen}
-                request={newMissionRequest ?? undefined}
-                onOpenRequestWorkspace={onOpenRequestWorkspace}
-                onOpenMissions={() => setView('missions')}
-              />
-            )}
-          </div>
-        )}
+        </div>
       </div>
     </>
   );

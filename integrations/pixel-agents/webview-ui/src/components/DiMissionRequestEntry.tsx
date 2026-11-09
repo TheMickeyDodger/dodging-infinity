@@ -35,6 +35,8 @@ export interface DiMissionRequestAccess {
   sendTurn?: () => void;
   /** Start a new conversation: the Ask draft and the shown conversation are cleared; nothing is sent. */
   newConversation?: () => void;
+  /** D1: close the shown conversation, KEEPING the Ask draft as the same input (nothing is sent or cleared). */
+  closeConversation?: () => void;
   /** READ one conversation and show it, WITHOUT opening the workspace (view only; nothing is sent). */
   readConversation?: (conversationId: string) => void;
   /** New Mission shows the conversation in place: while `on`, it is read as the open workspace reads it (reads only). */

@@ -883,14 +883,24 @@ export const DI_ASK_BRING_BACK = 'Bring the ask back here';
 
 /**
  * Review round 2, blocker 1: a conversation picked in Recent whose READ was refused or not answered. Nothing of it is shown, so nothing is sent into it.
+ * It names both ways on the page word for word: DI_NEW_READ_AGAIN and DI_ASK_LEAVE_UNREAD (B2e: picking the selected ask in Recent now CLOSES it, so the
+ * words no longer send a person there to try again).
  */
 export const DI_ASK_UNREAD =
-  'This conversation could not be read, so nothing is sent into it. Pick it in Recent to try again, or start a new conversation, keeping your ask.';
+  'This conversation could not be read, so nothing is sent into it. Read this conversation again, or start a new conversation, keeping your ask.';
 /**
  * R3-REC (review round 3): the way out of a conversation that could not be read, on New Mission in exactly that state (no thread, so not the thread's own
  * "Start a new conversation", is drawn then). Unlike that control, it KEEPS the typed ask. DI_ASK_UNREAD names it, word for word.
  */
 export const DI_ASK_LEAVE_UNREAD = 'Start a new conversation, keeping your ask';
+/**
+ * D1: the way out of ANY conversation New Mission shows (picked in Recent, in every state of its read, or begun here): back to the blank start. Like the
+ * unread way out it KEEPS the typed ask (a pick never touched the box, so leaving it does not either); the first Escape does the same.
+ */
+export const DI_NEW_CLOSE_CONVERSATION = 'Close this conversation';
+export const DI_NEW_CLOSE_CONVERSATION_NOTE = 'Back to a blank New Mission. Your ask stays in the box; nothing is sent or deleted. Esc does the same.';
+/** B2e: the labelled way to read the conversation shown AGAIN, drawn while its read failed (the selected Recent ask closes it instead). */
+export const DI_NEW_READ_AGAIN = 'Read this conversation again';
 /** A conversation picked in Recent while its read is still in flight: nothing of it is shown yet. */
 export const DI_ASK_READING = 'Reading this conversation. Send waits until it is shown.';
 /** Where the request workspace stands for New Mission: none in this office, not vouched for, not available now, the conversation picked could not be read, busy with the last message, or ready. */
