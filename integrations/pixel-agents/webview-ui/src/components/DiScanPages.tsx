@@ -157,6 +157,17 @@ export function StatusTag({
   );
 }
 
+/** Why "Read this conversation again" is held: a read of THAT conversation is already in flight. A press sends nothing until it settles. */
+const READ_AGAIN_IN_FLIGHT_REASON =
+  'This conversation is already being read. Read this conversation again once that answer arrives.';
+
+function conversationReadPending(
+  pending: MrState['pending'] | undefined,
+  conversationId: string,
+): boolean {
+  return pending?.some((item) => item.op === 'conversation' && item.conversationId === conversationId) === true;
+}
+
 /** A control drawn but not connected: disabled, its reason on hover AND spoken (aria-describedby), never a stub that looks live. */
 function Off({
   testid,
@@ -1293,10 +1304,14 @@ export function NewMissionPage({
   useEffect(() => {
     drawnRef.current = { id: shownId, count: request?.state.conversation.turns.length ?? 0, read: readSeq !== null };
   });
-  // B2e correction: READ AGAIN is its own labelled control (the selected Recent ask CLOSES the conversation, so a click there no longer re-reads). It is drawn
-  // exactly while this page says the read of the conversation shown FAILED (unread, or a current read-failure notice) and no read of it is in flight.
-  const readInFlight = request !== undefined && shownId !== null && request.state.pending.some((p) => p.op === 'conversation' && p.conversationId === shownId);
-  const offerReadAgain = request !== undefined && (unread || request.state.notices.some(isCurrentReadFailure)) && !readInFlight;
+  // B2e / DESIGN.md: "Read this conversation again" is its own labelled control (the selected Recent ask CLOSES the conversation, so a click there no
+  // longer re-reads). The LIVE control is drawn only while this page says the read of the conversation shown FAILED (unread, or a current read-failure
+  // notice) AND no read of THAT conversation is in flight. While one is in flight the same label stays in the row, held and disabled, with the reason:
+  // removing it detached the control under a press. A successful read clears the failure, and the control goes with it.
+  const offerReadAgain = request !== undefined && (unread || request.state.notices.some(isCurrentReadFailure));
+  const readAgainInFlight =
+    shownId !== null &&
+    conversationReadPending(request?.state.pending, shownId);
   const askId = useId();
   const hintId = useId();
   const reasonId = useId();
@@ -1357,7 +1372,8 @@ export function NewMissionPage({
   // then leaves the view (split-4, measured at every size), and the first draw must not scroll (case (c)). A second Enter there closes the conversation, as
   // a second Enter on a picked Recent ask deselects it: disclosed, not hidden.
   const readAgain = () => {
-    if (request === undefined || shownId === null) return;
+    if (request === undefined || shownId === null || readAgainInFlight) return;
+    // focus moves FIRST to "Close this conversation", this control's neighbour, so the live button may become the held control without dropping focus
     closeRef.current?.focus();
     request.readConversation(shownId);
   };
@@ -1441,11 +1457,14 @@ export function NewMissionPage({
               >
                 {DI_NEW_CLOSE_CONVERSATION}
               </button>
-              {offerReadAgain && (
-                <button type="button" className="di-page-button" data-testid="di-new-read-again" onClick={readAgain}>
-                  {DI_NEW_READ_AGAIN}
-                </button>
-              )}
+              {offerReadAgain &&
+                (readAgainInFlight ? (
+                  <Off testid="di-new-read-again" label={DI_NEW_READ_AGAIN} reason={READ_AGAIN_IN_FLIGHT_REASON} />
+                ) : (
+                  <button type="button" className="di-page-button" data-testid="di-new-read-again" onClick={readAgain}>
+                    {DI_NEW_READ_AGAIN}
+                  </button>
+                ))}
             </div>
           )}
           <div className="di-new-main-scroll" data-testid="di-new-main-scroll">

@@ -2,7 +2,7 @@
 target: the DI World scan face and request workspace (B3)
 total_score: 29
 max_score: 40
-na_heuristics: 
+na_heuristics:
 p0_count: 0
 p1_count: 0
 target_identity: "file:/Users/travissellers/tools/di-mission-worktrees/mn-1054a1021ed876bd1d6afdd98ccb8740/integrations/pixel-agents/webview-ui/src/components/DiScanPanel.tsx"

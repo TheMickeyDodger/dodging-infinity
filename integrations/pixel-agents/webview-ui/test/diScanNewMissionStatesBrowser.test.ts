@@ -62,6 +62,8 @@ interface Answers {
   turn: 'ok' | 'refused' | 'unknown' | 'unavailable';
   /** Review round 2, blocker 1: when set, the overview lists two recent conversations, A and B, and each one's READ is answered as given. */
   recent?: Record<string, 'ok' | 'empty' | 'refused' | 'unknown'>;
+  /** When set, that recent conversation is also a Reception entry waiting for an answer. */
+  receptionAwaiting?: string;
 }
 let answers: Answers = { panel: 'available', turn: 'ok' };
 const A = SYNTHETIC_CONVERSATION_ID;
@@ -110,9 +112,19 @@ beforeAll(async () => {
         if (msg.type !== 'diMissionRequest') return;
         const send = (m: Record<string, unknown>) => ws.send(JSON.stringify(m));
         if (msg.op === 'refresh') {
-          if (answers.panel === 'available' && answers.recent)
-            send(relayReply(msg.seq, 'refresh', syntheticOverview([syntheticConversationSummary(A, ASK_A), syntheticConversationSummary(B, ASK_B)])));
-          else if (answers.panel === 'available') send(relayReply(msg.seq, 'refresh', syntheticOverview()));
+          if (answers.panel === 'available' && answers.recent) {
+            const summaries = [syntheticConversationSummary(A, ASK_A), syntheticConversationSummary(B, ASK_B)].map((summary) => {
+              const id = String((summary as { conversation_id?: unknown }).conversation_id ?? '');
+              if (answers.receptionAwaiting !== id) return summary;
+              return {
+                ...summary,
+                awaiting_answer: true,
+                awaiting_turn_id: `ct-${'a'.repeat(32)}`,
+                awaiting_questions: ['SYNTHETIC: what should the next step be?'],
+              };
+            });
+            send(relayReply(msg.seq, 'refresh', syntheticOverview(summaries)));
+          } else if (answers.panel === 'available') send(relayReply(msg.seq, 'refresh', syntheticOverview()));
           else send({ type: 'diMissionRequestReply', seq: msg.seq, op: 'refresh', state: 'unavailable', problem: 'panel_discovery_unavailable', reason: UNAVAILABLE_REASON, answer: null });
         }
         if (msg.op === 'turn') {
@@ -799,6 +811,12 @@ for (const kind of ['refused', 'unknown'] as const)
       assert.equal(label, 'Start a new conversation, keeping your ask');
       assert.ok(held.toLowerCase().includes(label.toLowerCase()), `Send's hold names the control: ${held}`);
       assert.equal(await p().locator(sel('di-new-new-conversation')).count(), 0, 'the thread control is not drawn here');
+      // The pick's read stamps the watch cadence. A poll that was already due used to fire while
+      // this click was still settling (CI's click wait is long) and the assertion below then saw
+      // that read. Inside the cadence, the watch must not read again.
+      const readsAfterPick = conversationReads(B);
+      await p().waitForTimeout(2_000);
+      assert.equal(conversationReads(B), readsAfterPick, 'the watch does not read again inside the cadence after the pick');
       const before = sentByPage.length;
       await p().locator(sel('di-new-leave-unread')).click();
       await p().waitForTimeout(400);
@@ -865,3 +883,177 @@ for (const route of ['pointer', 'keyboard Enter', 'keyboard Space'] as const)
     },
     STEPS_MS,
   );
+
+test(
+  'READ AGAIN is held while a read of that conversation is in flight: the reason is shown, a press sends nothing, the control is offered again once that read settles refused, and a different conversation is still read at once',
+  async () => {
+    await bPickedAndRefused();
+    assert.equal(await readAgain().isDisabled(), false, 'precondition: the live control, not held');
+    holdReads.add(B);
+    const before = conversationReads(B);
+    await readAgain().click();
+    const end = Date.now() + 10_000;
+    while (conversationReads(B) <= before && Date.now() < end) await p().waitForTimeout(50);
+    assert.equal(conversationReads(B), before + 1, 'the press asks once');
+    await p().waitForFunction(() => {
+      const el = document.querySelector('[data-testid="di-new-read-again"]');
+      return el instanceof HTMLButtonElement && el.disabled;
+    });
+    const reason = (await readAgain().getAttribute('title')) ?? '';
+    assert.match(reason, /already being read/, reason);
+    const described = await readAgain().getAttribute('aria-describedby');
+    assert.ok(described, 'the reason is spoken');
+    assert.equal(((await p().locator(`[id="${described}"]`).innerText()) ?? '').trim(), reason);
+    const heldCount = conversationReads(B);
+    // A disabled control does not activate. This is a real press, not a forced one, and it must not ask again.
+    await assert.rejects(() => readAgain().click({ timeout: 800 }));
+    assert.equal(conversationReads(B), heldCount, 'a press while that read is pending sends nothing');
+    release(B);
+    await p().waitForFunction(() => {
+      const el = document.querySelector('[data-testid="di-new-read-again"]');
+      return el instanceof HTMLButtonElement && !el.disabled;
+    });
+    assert.equal(await readAgain().isDisabled(), false, 'offered again once the refused read settles');
+    holdReads.add(B);
+    const beforeSecond = conversationReads(B);
+    await readAgain().click();
+    const endSecond = Date.now() + 10_000;
+    while (conversationReads(B) <= beforeSecond && Date.now() < endSecond) await p().waitForTimeout(50);
+    await p().waitForFunction(() => {
+      const el = document.querySelector('[data-testid="di-new-read-again"]');
+      return el instanceof HTMLButtonElement && el.disabled;
+    });
+    const readsA = conversationReads(A);
+    holdReads.add(A);
+    await recentAsk(A).click();
+    const endA = Date.now() + 10_000;
+    while (conversationReads(A) <= readsA && Date.now() < endA) await p().waitForTimeout(50);
+    assert.equal(conversationReads(A), readsA + 1, 'a different conversation is read at once while this one is still pending');
+  },
+  STEPS_MS,
+);
+
+/** New Mission with Recent A and B. `awaiting` also lists that conversation in Reception as waiting for an answer. */
+async function bootRecent(awaiting?: string): Promise<void> {
+  answers = { panel: 'available', turn: 'ok', recent: { [A]: 'ok', [B]: 'ok' }, receptionAwaiting: awaiting };
+  await boot();
+  await panelBecomes('available');
+}
+
+async function untilReads(id: string, n: number): Promise<void> {
+  const end = Date.now() + 10_000;
+  while (conversationReads(id) < n && Date.now() < end) await p().waitForTimeout(50);
+  assert.equal(conversationReads(id), n, `${n} read(s) of ${id === A ? 'A' : 'B'}`);
+}
+
+/** The conversation is the one shown: its Recent ask is current, and Close is drawn. */
+async function shown(id: string): Promise<void> {
+  await p().waitForFunction((conversationId) => {
+    const ask = document.querySelector(`[data-testid="di-new-recent-ask"][data-conversation="${conversationId}"]`);
+    return ask?.getAttribute('aria-current') === 'true' && document.querySelector('[data-testid="di-new-close-conversation"]') !== null;
+  }, id);
+}
+
+async function closeShown(): Promise<void> {
+  await p().locator(sel('di-new-close-conversation')).click();
+  await p().waitForSelector(sel('di-new-close-conversation'), { state: 'detached', timeout: 5_000 });
+}
+
+test(
+  'PICK AGAIN after Close, while that read is still pending: A is shown, the reply lands in it, and the read is not asked again',
+  async () => {
+    await bootRecent();
+    holdReads.add(A);
+    await recentAsk(A).click();
+    await untilReads(A, 1);
+    await shown(A);
+    await closeShown();
+    assert.equal(await recentAsk(A).getAttribute('aria-current'), null, 'Close left A unselected, with its read still pending');
+    await recentAsk(A).click();
+    await shown(A);
+    await p().waitForTimeout(400);
+    assert.equal(conversationReads(A), 1, 'picking A again attached to the read already in flight');
+    release(A);
+    await p().waitForFunction((words) => document.querySelector('[data-testid="di-new-thread"]')?.textContent?.includes(words) === true, ASK_A);
+    assert.equal(conversationReads(A), 1, 'the reply landed without a second ask');
+  },
+  STEPS_MS,
+);
+
+test(
+  'PICK AGAIN after another conversation, while the first read is still pending: A is shown, the reply lands in it, and the read is not asked again',
+  async () => {
+    await bootRecent();
+    holdReads.add(A);
+    await recentAsk(A).click();
+    await untilReads(A, 1);
+    holdReads.add(B);
+    await recentAsk(B).click();
+    await untilReads(B, 1);
+    await shown(B);
+    assert.equal(conversationReads(A), 1, 'B was read at once and A was not asked again');
+    await recentAsk(A).click();
+    await shown(A);
+    await p().waitForTimeout(400);
+    assert.equal(conversationReads(A), 1, 'picking A again attached to the read already in flight');
+    assert.equal(conversationReads(B), 1);
+    release(A);
+    await p().waitForFunction((words) => document.querySelector('[data-testid="di-new-thread"]')?.textContent?.includes(words) === true, ASK_A);
+    assert.equal(conversationReads(A), 1, 'A’s reply landed in A');
+    assert.doesNotMatch(await p().locator(sel('di-new-thread')).innerText(), new RegExp(escapeRegExp(ASK_B)), 'B is not shown as A');
+  },
+  STEPS_MS,
+);
+
+/** The operational office, where Reception's inbox opens the request panel on one conversation. */
+async function bootOperational(): Promise<void> {
+  answers = { panel: 'available', turn: 'ok', recent: { [A]: 'ok', [B]: 'ok' }, receptionAwaiting: A };
+  const connected = new Promise<ServerSocket>((resolve) => (resolveConnected = resolve));
+  page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(url.replace('di-app-scan.html', 'di-app.html'), { waitUntil: 'domcontentloaded' });
+  await connected;
+  socket!.send(JSON.stringify({ type: 'providerCapabilities', readingTools: ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'], subagentToolNames: ['Task', 'Agent'] }));
+  socket!.send(JSON.stringify({ type: 'settingsLoaded', soundEnabled: false, lastSeenVersion: VERSION, extensionVersion: VERSION }));
+  socket!.send(JSON.stringify(office));
+  await p().waitForSelector(`${sel('di-office-panel')}, ${sel('di-office-panel-collapsed')}`, { timeout: 20_000 });
+  if ((await p().locator(sel('di-office-panel-collapsed')).count()) > 0) await p().locator(sel('di-office-panel-collapsed')).click();
+  const before = ops().filter((op) => op === 'refresh').length;
+  const end = Date.now() + 20_000;
+  while (ops().filter((op) => op === 'refresh').length <= before && Date.now() < end) await p().waitForTimeout(50);
+  assert.ok(ops().filter((op) => op === 'refresh').length > before, 'the office read the request panel');
+}
+
+async function openAFromReception(): Promise<void> {
+  await p().locator(sel('di-open-reception')).click();
+  await p().waitForSelector(sel('di-reception-inbox'), { timeout: 10_000 });
+  const card = p().locator('[data-testid="di-reception-entry"][data-entry-kind="panel"]', { hasText: ASK_A });
+  await card.locator(sel('di-reception-open-panel')).click();
+  await p().waitForSelector(sel('di-mr'), { timeout: 10_000 });
+}
+
+test(
+  'PICK AGAIN from Reception, while that read is still pending: the panel shows A, the reply lands in it, and the read is not asked again',
+  async () => {
+    await bootOperational();
+    holdReads.add(A);
+    await openAFromReception();
+    await untilReads(A, 1);
+    // Close leaves the read pending and the conversation unselected. Escape peels the inbox, then the conversation.
+    await p().keyboard.press('Escape');
+    await p().locator(sel('di-mr-composer')).click();
+    await p().keyboard.press('Escape');
+    await p().waitForTimeout(300);
+    assert.equal(conversationReads(A), 1, 'Close did not ask again');
+    await openAFromReception();
+    await p().waitForTimeout(400);
+    assert.equal(conversationReads(A), 1, 'Reception attached to the read already in flight');
+    release(A);
+    await p().waitForFunction(
+      (words) => (document.querySelector('[data-testid="di-mr-log"]')?.textContent ?? '').includes(words),
+      ASK_A,
+    );
+    assert.equal(conversationReads(A), 1, 'the reply landed without a second ask');
+  },
+  STEPS_MS,
+);

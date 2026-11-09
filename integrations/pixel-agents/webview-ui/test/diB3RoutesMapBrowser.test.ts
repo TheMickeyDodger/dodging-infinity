@@ -313,7 +313,9 @@ for (const vp of SIZES) {
       assert.equal(r.expanded, 'true', 'CONTRACT (OPENS): the disclosure reads expanded');
     }
     assert.deepEqual([small.toJump, base.toJump], [large.toJump, large.toJump], `CONTRACT (INVARIANT): the jump is the same number of Tabs from the search with ${small.shape.rows}, ${base.shape.rows} and ${large.shape.rows} rows`);
-  });
+    // Five browser boots and a plain tab route through the whole collection. The 30s vitest budget
+    // killed this on CI before any assertion (Pixel UI shard 4, both attempts would not fit).
+  }, STEPS_MS);
   test(`B3 ROUTES, Map, at ${where}, BACK: from the Map's toggle to Home's search by the mirror jump costs the same presses with 4, 64 and 192 Missions`, async () => {
     const small = await backCost(vp, 'small');
     const base = await backCost(vp, null);
@@ -325,7 +327,7 @@ for (const vp of SIZES) {
       assert.equal(r.landed, 'di-scan-search', `CONTRACT (LANDS): Enter lands on Home's search (${r.shape.rows} rows)`);
     }
     assert.deepEqual([small.toJump, base.toJump], [large.toJump, large.toJump], 'CONTRACT (INVARIANT): the way back is the same number of Tabs whatever the collection');
-  });
+  }, STEPS_MS);
   test(`B3 ROUTES, Map, at ${where}, SEEN: each jump is hidden until focused and then genuinely visible`, async () => {
     const forward = await forwardCost(vp, null);
     await calibrateSeen();
@@ -336,7 +338,7 @@ for (const vp of SIZES) {
     assert.equal(forward.seenFocused?.seen, true, `CONTRACT (SEEN): "Go to the Map", focused, is seen (${forward.seenFocused?.why.join('; ') ?? 'not reached'})`);
     assert.equal(back.seenFocused?.seen, true, `CONTRACT (SEEN): "Back to the Mission list", focused, is seen (${back.seenFocused?.why.join('; ') ?? 'not reached'})`);
     assert.equal(hiddenBefore.seen, false, 'CONTRACT (HIDDEN): unfocused, the jump is not drawn');
-  });
+  }, STEPS_MS);
 }
 // ── the tray: "Go to minimized surfaces (n)" ─────────────────────────────────────────────────────────────────────────────────────────────────────
 async function minimizeWorkspace(): Promise<void> {
@@ -394,7 +396,7 @@ for (const vp of SIZES) {
     }
     assert.ok(small.shape.rows < base.shape.rows && base.shape.rows < large.shape.rows, `CALIBRATION: the collections differ in rows (${small.shape.rows}, ${base.shape.rows}, ${large.shape.rows})`);
     assert.deepEqual([small.toJump, base.toJump], [large.toJump, large.toJump], 'CONTRACT (INVARIANT): the tray jump is the same number of Tabs whatever the collection');
-  });
+  }, STEPS_MS);
   test(`B3 ROUTES, tray, at ${where}: the count is never stale, and the strip is still LATER in the DOM than the dock (the one-pane fix depends on it)`, async () => {
     await boot(vp.width, vp.height);
     await openWorkspace();

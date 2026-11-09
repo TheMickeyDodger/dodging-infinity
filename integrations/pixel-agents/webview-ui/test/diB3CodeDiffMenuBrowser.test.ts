@@ -745,7 +745,9 @@ for (const vp of SIZES.filter((s) => s.width >= 1440)) {
     const cost = (r: typeof small) => (r.toSkip ?? -1) + 1 + (r.toggleAfterSkip ?? -1);
     assert.equal(cost(small), cost(large), `CONTRACT (INVARIANT): the skip route costs the same presses with ${small.files} files (${cost(small)}) and ${large.files} (${cost(large)})`);
     assert.equal(cost(base), cost(large), `CONTRACT (INVARIANT): and with the fixture's own ${base.files} (${cost(base)})`);
-  });
+    // Three diffs and a plain tab through every file. The 30s vitest budget killed this on CI
+    // before any assertion (Pixel UI shard 4).
+  }, STEPS_MS);
   test(`B3 ROUTES, Code Diff, at ${where}: the skip control is hidden until focused, then SEEN (not clipped, not covered), and the Escape contract is untouched`, async () => {
     await atDiff(vp);
     await calibrateSeen();
