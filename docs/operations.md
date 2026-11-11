@@ -304,6 +304,36 @@ ls -t HERD_ROOT/state/diagnostics/
 python3 -m json.tool FILE
 ```
 
+### Clearing a stale child reservation
+
+A parent herd writes a reservation into `.herd/state/children.anchor.json` before it launches a child. The reservation names the child repository and has no task id. It is replaced by the child's identity only after a child record is written. If startup fails before that — `BindingsNotEstablished`, exit 1, the child's state holding only `diagnostics/` — the reservation stays, and every later spawn for that parent is refused with `registry_loss_detected`.
+
+Do not edit `children.json` or `children.anchor.json` by hand, and do not remove an identity from the anchor to unblock the parent. `herdctl task-abort` aborts the parent task. It does not clear the reservation.
+
+```text
+herdctl children correct \
+  --repo PARENT \
+  --parent-task TASK_ID \
+  --child-repo CHILD \
+  --evidence CHILD/.herd/state
+```
+
+`--repo` is the parent herd, as it is for every other `herdctl` command. `--child-repo` is the repository the reservation names. `--evidence` must be that child's own `.herd/state` directory. A copy, another directory, or a symlink is refused.
+
+The command clears that one reservation only when all of the following are true:
+
+- The anchor holds a reservation for that child on that parent task, and it does not hold a concrete identity (a task id) for the same child. A concrete identity is never removed. Other children's identities stay.
+- The parent's `children.json` has no record for that child. An unreadable registry is a refusal.
+- The state directory's only entry is `diagnostics/`, and that directory's only entry is one `startup-binding-failure-*.json` file.
+- That file is a closed-schema startup-binding record for this child, stage `establish_role_bindings`, failure type `BINDINGS_NOT_ESTABLISHED`, and it lists every affected role.
+- `herdr agent list` succeeds, and no listed agent is this child's session: not by cwd, not by the diagnostic's workspace id, and not by an agent name the diagnostic records. A failed or unreadable listing is a refusal, not an empty machine. An agent with no absolute cwd cannot be excluded, so that is a refusal too.
+
+A herd that came up stays blocking, even when no task file was written. `start_herd` writes `runtime.json` while it is starting and writes `role-bindings.json` only after every role binds, which is before `start_herd` returns. Task dispatch runs only after that return. Either file means the herd process came up, or is still coming up. A diagnostic whose stage is `heartbeat_controller` says the same thing: role bindings had already been established. Absence of `task.json` does not prove dispatch never started, and "nothing is running now" is not evidence. Those reservations stay until the recorded work is resolved and durably tracked.
+
+An agent-start diagnostic, an `UNKNOWN` failure, more than one binding file, a task archive, or any other file in the state directory is ambiguous and is refused. The anchor is not changed.
+
+The command appends one JSON line to the parent's `.herd/state/child-registration-corrections.jsonl`. The line records the operator, the time, the sha256 of each evidence file and of that listing, the diagnostic's name and failure, and the anchor's before and after bytes. Existing receipt lines are not rewritten. Approval grants, the approval ledger, and digest files are not opened for writing. A second run with the same evidence, after the reservation is gone and the anchor still matches the receipt, writes nothing. If the receipt was appended and the anchor write then failed, a later run that still meets every rule finishes the anchor write and does not append a second line. If the evidence no longer matches the receipt, the command refuses and leaves both files as they are.
+
 ## 6. Create and run a Mission
 
 The short form dispatches an objective directly:
@@ -2133,6 +2163,16 @@ herdctl prompt ROLE "..." --repo NAME
 
 herdctl heartbeat --once --repo NAME
 herdctl restart-heartbeat --repo NAME
+```
+
+`herdctl children correct` clears one stale child-registration reservation. The evidence rules and the receipt are under [Clearing a stale child reservation](#clearing-a-stale-child-reservation).
+
+```text
+herdctl children correct \
+  --repo PARENT \
+  --parent-task TASK_ID \
+  --child-repo CHILD \
+  --evidence CHILD/.herd/state
 ```
 
 ### `tgop`

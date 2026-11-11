@@ -238,6 +238,28 @@ Escalate only when the blocker requires a decision or authority outside the appr
 
 ---
 
+## Stale child registration
+
+A parent herd that spawns a child writes a reservation into its registration anchor before the child starts. If the child fails during startup before any child task is dispatched, the reservation has no task id and later spawns are refused with `registry_loss_detected`.
+
+That reservation is not withdrawn because a launch raised. Clearing it is a supervised correction, and only this command does it:
+
+```text
+herdctl children correct \
+  --repo PARENT \
+  --parent-task TASK_ID \
+  --child-repo CHILD \
+  --evidence CHILD/.herd/state
+```
+
+`--repo` is the parent herd. `--evidence` must be the child's own `.herd/state`. Run the command only when that directory shows that no child task was dispatched: one `BindingsNotEstablished` diagnostic from stage `establish_role_bindings`, no registry record, no concrete child identity, and no live child session. Missing or ambiguous evidence is a refusal.
+
+A herd that came up stays blocking even if no task file exists. `runtime.json`, `role-bindings.json`, or a failure recorded at `heartbeat_controller` means startup got far enough that task dispatch may already have begun. Stopped processes are not evidence that it did not.
+
+The command appends an audit receipt (who, when, evidence hashes, and the anchor before and after) and does not rewrite existing receipts, grants, or digests. Do not edit `children.json` or `children.anchor.json` by hand, and do not remove an identity from the anchor to unblock the parent. The full rule is in `docs/operations.md`, "Clearing a stale child reservation".
+
+---
+
 ## Follow-Up Work
 
 Herdr completion does not automatically mean the human objective is complete.

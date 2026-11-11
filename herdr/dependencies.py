@@ -440,16 +440,13 @@ def read_registration_anchor(
     return result
 
 
-def _write_registration_anchor(
-    herd: HerdrInstance,
+def render_registration_anchor(
     registered: dict[str, list[Identity]],
-) -> None:
-    """Atomically replace the anchor (temporary file, fsync, ``os.replace``): a reader sees the old whole file or the new whole one.
-    An anchor holding nothing is no anchor: the file is removed, so an undo leaves the directory exactly as it was found."""
+) -> bytes | None:
+    """The exact bytes ``_write_registration_anchor`` publishes, or None when that write would remove the file.
 
-    path = anchor_path(
-        herd
-    )
+    An anchor holding nothing is no anchor. The bytes are the only serialization the writer uses, so a receipt can
+    name the before and after file by the hash of these bytes."""
 
     registered = {
         key: entries
@@ -458,14 +455,9 @@ def _write_registration_anchor(
     }
 
     if not registered:
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+        return None
 
-        return
-
-    data = (
+    return (
         json.dumps(
             {
                 "version": ANCHOR_VERSION,
@@ -486,6 +478,30 @@ def _write_registration_anchor(
         )
         + "\n"
     ).encode("utf-8")
+
+
+def _write_registration_anchor(
+    herd: HerdrInstance,
+    registered: dict[str, list[Identity]],
+) -> None:
+    """Atomically replace the anchor (temporary file, fsync, ``os.replace``): a reader sees the old whole file or the new whole one.
+    An anchor holding nothing is no anchor: the file is removed, so an undo leaves the directory exactly as it was found."""
+
+    path = anchor_path(
+        herd
+    )
+
+    data = render_registration_anchor(
+        registered
+    )
+
+    if data is None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+        return
 
     temporary = path.with_name(
         f"{path.name}.tmp-{os.getpid()}"
@@ -706,7 +722,7 @@ def missing_registrations(
                 "child is launched, so work may have begun there. Clearing it would need positive evidence that it NEVER started (for example a "
                 "recorded refusal raised before the herd was started); work that DID start stays blocking until its required outcome is resolved "
                 "and durably tracked; anything ambiguous stays blocking. 'Nothing is running now' is not such evidence: stopped or ERROR work can "
-                f"still be required and unresolved. Do not edit children.json or {ANCHOR_FILE} by hand; clearing needs a supervised correction)"
+                f"still be required and unresolved. Do not edit children.json or {ANCHOR_FILE} by hand; clearing needs a supervised correction (`herdctl children correct`))"
             )
 
     return missing
@@ -795,7 +811,7 @@ def child_dependencies(
                     "The child registry no longer accounts for what was registered "
                     f"for this task: {shown}. Records were lost or replaced, or the "
                     "registry was deleted. Completion stays blocked. Restoring the registry, or correcting the anchor, needs a supervised "
-                    f"correction. Do not edit children.json or {ANCHOR_FILE} by hand, and never remove an identity from the anchor to unblock a parent."
+                    f"correction (`herdctl children correct`). Do not edit children.json or {ANCHOR_FILE} by hand, and never remove an identity from the anchor to unblock a parent."
                 ),
             }
         )

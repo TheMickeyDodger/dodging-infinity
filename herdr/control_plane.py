@@ -286,7 +286,7 @@ class HerdrControlPlane:
                         f"NOTE: the launch into {target} raised {type(launch_error).__name__}: {launch_error}; an exception is not evidence that "
                         f"nothing started, so the reservation for {target} in the registration anchor stays and blocks the parent's completion. "
                         "It is not withdrawn by this process and must not be edited away by hand: if the work never started, a supervised correction "
-                        "can clear it on positive evidence of that; if it started, the block stays until its required outcome is resolved and durably tracked."
+                        "(`herdctl children correct`) can clear it on positive evidence of that; if it started, the block stays until its required outcome is resolved and durably tracked."
                     )
 
                 raise

@@ -22,6 +22,10 @@ from herdr.config import (
     ROLE_FILES,
     apply_preset_to_config,
 )
+from herdr.child_correction import (
+    CorrectionRefused,
+    correct_child_reservation,
+)
 from herdr.control_plane import HerdrControlPlane
 from herdr.follow_on import FollowOnRefused, registry_lock
 from herdr.registry import REGISTRY
@@ -1826,6 +1830,46 @@ def task_complete_cmd(args):
         )
 
 
+def children_correct_cmd(args):
+    """Clear one stale child-registration reservation. See herdr.child_correction."""
+
+    parent = resolve_repo_ref(args.repo)
+    child = resolve_repo_ref(args.child_repo)
+    try:
+        result = correct_child_reservation(
+            parent,
+            args.parent_task,
+            child,
+            args.evidence,
+        )
+    except FollowOnRefused as exc:
+        raise SystemExit(f"{exc.check}: {exc.detail}")
+    except CorrectionRefused as exc:
+        raise SystemExit(f"{exc.check}: {exc.detail}")
+    child_repo = result["child_repo"]
+    task_id = result["parent_task_id"]
+    receipt = result["receipt_path"]
+    if result["applied"] and result["receipt_appended"]:
+        print(
+            f"Cleared the stale reservation for {child_repo} "
+            f"on parent task {task_id}."
+        )
+        print(f"Receipt appended to {receipt}.")
+        return
+    if result["applied"]:
+        print(
+            f"Cleared the stale reservation for {child_repo} "
+            f"on parent task {task_id}."
+        )
+        print(f"The receipt at {receipt} already recorded this clear. It was not rewritten.")
+        return
+    print(
+        f"The reservation for {child_repo} on parent task {task_id} "
+        "is already cleared."
+    )
+    print(f"The existing receipt at {receipt} matches this evidence. Nothing was written.")
+
+
 def task_abort_cmd(args):
     r = resolve_repo_ref(args.repo)
     t = load_task(r)
@@ -2339,6 +2383,41 @@ def main():
     q.add_argument("--repo")
     q.add_argument("--reason")
     q.set_defaults(fn=task_abort_cmd)
+
+    q = sp.add_parser(
+        "children",
+        help="correct a parent herd's child-registration anchor",
+    )
+    children = q.add_subparsers(dest="children_cmd", required=True)
+    correct = children.add_parser(
+        "correct",
+        help="clear one stale child-registration reservation on audited evidence",
+        description=(
+            "Remove one reservation (a child repository with no task id) from the "
+            "parent's registration anchor. The evidence directory must be that "
+            "child's own .herd/state, and it must show that startup failed with "
+            "BindingsNotEstablished before any task was dispatched: no registry "
+            "record, no concrete child identity, no runtime.json, no role bindings, "
+            "and no live child session. A herd that came up stays blocking even "
+            "when no task file exists. The audit receipt is append-only."
+        ),
+    )
+    correct.add_argument(
+        "--repo",
+        help="parent herd whose registration anchor holds the reservation",
+    )
+    correct.add_argument("--parent-task", required=True)
+    correct.add_argument(
+        "--child-repo",
+        required=True,
+        help="repository the reservation names",
+    )
+    correct.add_argument(
+        "--evidence",
+        required=True,
+        help="that child's own .herd/state directory, not a copy",
+    )
+    correct.set_defaults(fn=children_correct_cmd)
 
     q = sp.add_parser("clear-contexts")
     q.add_argument("--repo")

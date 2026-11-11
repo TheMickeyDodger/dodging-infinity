@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`herdctl children correct` clears one stale child-registration reservation.** A parent that spawns a child writes a reservation with no task id before launch. If startup fails with `BindingsNotEstablished` before any child task is dispatched, that reservation used to stay forever and every later spawn was refused with `registry_loss_detected`. The command removes that one reservation only when the child's own `.herd/state` holds a single pre-dispatch binding-failure diagnostic, the parent registry has no record for that child, the anchor has no concrete identity for it, and no live child session remains. A herd that came up (`runtime.json`, `role-bindings.json`, or a `heartbeat_controller` failure) stays blocking even when no task file exists. The command appends an audit receipt and does not rewrite existing receipts, grants, or digests. See `docs/operations.md`, "Clearing a stale child reservation".
+
 - **One status per Mission everywhere, archive at once, local data reclaimed after 30 days (Pixel Agents DI office, Free, in the browser).**
   - **One status.** Every Mission reads exactly one status from one closed list of 15, the same on the Missions table, Mission details, Reception
     and the rail.
