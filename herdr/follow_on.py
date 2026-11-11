@@ -1243,7 +1243,7 @@ def admit_spawn_registration(
     not a warning. Returns the reservation, or ``None`` when the parent has no active task (no dependency is registered).
 
     The reservation is NEVER withdrawn by the caller on an exception from the launch (see `HerdrControlPlane.spawn_child`): it is replaced by
-    the child's identity once the record is written (`finalize_spawn_registration`) or cleared by a person.
+    the child's identity once the record is written (`finalize_spawn_registration`) or cleared by `herdctl children correct` on audited evidence.
     """
 
     path = (
